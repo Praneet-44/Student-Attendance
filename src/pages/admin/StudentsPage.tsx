@@ -10,16 +10,17 @@ import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import type { Department, UserWithInfo } from "../../lib/types";
 import { DEMO_DEPARTMENTS, DEMO_STUDENTS } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout, fetchWithTimeout } from "../../lib/cache";
 
 export function StudentsPage() {
   const { showToast } = useToast();
   const { session } = useAuth();
-  const [students, setStudents] = useState<UserWithInfo[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const [students, setStudents] = useState<UserWithInfo[]>(() => getLocalCache("admin_students") || getDemoStudentsDefault());
+  const [departments, setDepartments] = useState<Department[]>(() => getLocalCache("admin_depts") || DEMO_DEPARTMENTS);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("");
   const [semFilter, setSemFilter] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("admin_students"));
   const [modalOpen, setModalOpen] = useState(false);
   const [resetModal, setResetModal] = useState<UserWithInfo | null>(null);
   const [deleteModal, setDeleteModal] = useState<UserWithInfo | null>(null);
@@ -38,24 +39,8 @@ export function StudentsPage() {
     loadData();
   }, []);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [deptRes] = await Promise.all([
-        supabase.from("departments").select("id, name, code").order("name"),
-      ]);
-      setDepartments((deptRes.data || DEMO_DEPARTMENTS) as unknown as Department[]);
-      await loadStudents();
-    } catch {
-      setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
-      applyDemoStudents();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function applyDemoStudents() {
-    const demoUsers: UserWithInfo[] = DEMO_STUDENTS.map((s) => ({
+  function getDemoStudentsDefault(): UserWithInfo[] {
+    return DEMO_STUDENTS.map((s) => ({
       id: s.id,
       name: s.profiles.name,
       email: `${s.roll_number.toLowerCase()}@university.edu`,
@@ -69,27 +54,53 @@ export function StudentsPage() {
         created_at: new Date().toISOString(),
       },
     }));
-    setStudents(demoUsers);
   }
 
-  async function loadStudents() {
+  async function loadData() {
+    const hasCache = getLocalCache("admin_students") !== null;
+    if (!hasCache) setLoading(true);
+
     try {
-      const res = await fetch(`${ADMIN_FUNCTION_URL}/list`, {
+      const deptRes = await withTimeout(
+        supabase.from("departments").select("id, name, code").order("name"),
+        1000
+      );
+      if (deptRes.data && deptRes.data.length > 0) {
+        const depts = deptRes.data as unknown as Department[];
+        setDepartments(depts);
+        setLocalCache("admin_depts", depts);
+      }
+      await loadStudents(hasCache);
+    } catch {
+      if (!hasCache) {
+        setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+        setStudents(getDemoStudentsDefault());
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadStudents(hasCache: boolean = false) {
+    try {
+      const res = await fetchWithTimeout(`${ADMIN_FUNCTION_URL}/list`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
+      }, 1500);
+
       if (!res.ok) {
-        applyDemoStudents();
+        if (!hasCache) setStudents(getDemoStudentsDefault());
         return;
       }
       const data = await res.json();
       const filteredUsers = (data.users || []).filter((u: UserWithInfo) => u.role === "student");
       if (filteredUsers.length === 0) {
-        applyDemoStudents();
+        if (!hasCache) setStudents(getDemoStudentsDefault());
       } else {
         setStudents(filteredUsers);
+        setLocalCache("admin_students", filteredUsers);
       }
     } catch {
-      applyDemoStudents();
+      if (!hasCache) setStudents(getDemoStudentsDefault());
     }
   }
 

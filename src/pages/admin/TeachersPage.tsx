@@ -10,6 +10,7 @@ import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import type { Department, UserWithInfo } from "../../lib/types";
 import { DEMO_DEPARTMENTS } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout, fetchWithTimeout } from "../../lib/cache";
 
 const DEMO_TEACHERS: UserWithInfo[] = [
   { id: "demo-t-1", name: "Dr. Robert Vance", email: "robert@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { id: "demo-t-1", department_id: "demo-dept-1", created_at: new Date().toISOString() } },
@@ -20,10 +21,10 @@ const DEMO_TEACHERS: UserWithInfo[] = [
 export function TeachersPage() {
   const { showToast } = useToast();
   const { session } = useAuth();
-  const [teachers, setTeachers] = useState<UserWithInfo[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const [teachers, setTeachers] = useState<UserWithInfo[]>(() => getLocalCache("admin_teachers") || DEMO_TEACHERS);
+  const [departments, setDepartments] = useState<Department[]>(() => getLocalCache("admin_depts") || DEMO_DEPARTMENTS);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("admin_teachers"));
   const [modalOpen, setModalOpen] = useState(false);
   const [resetModal, setResetModal] = useState<UserWithInfo | null>(null);
   const [deleteModal, setDeleteModal] = useState<UserWithInfo | null>(null);
@@ -41,39 +42,50 @@ export function TeachersPage() {
   }, []);
 
   async function loadData() {
-    setLoading(true);
+    const hasCache = getLocalCache("admin_teachers") !== null;
+    if (!hasCache) setLoading(true);
+
     try {
-      const [deptRes] = await Promise.all([
+      const deptRes = await withTimeout(
         supabase.from("departments").select("id, name, code").order("name"),
-      ]);
-      setDepartments((deptRes.data || DEMO_DEPARTMENTS) as unknown as Department[]);
-      await loadTeachers();
+        1000
+      );
+      if (deptRes.data && deptRes.data.length > 0) {
+        const depts = deptRes.data as unknown as Department[];
+        setDepartments(depts);
+        setLocalCache("admin_depts", depts);
+      }
+      await loadTeachers(hasCache);
     } catch {
-      setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
-      setTeachers(DEMO_TEACHERS);
+      if (!hasCache) {
+        setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+        setTeachers(DEMO_TEACHERS);
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadTeachers() {
+  async function loadTeachers(hasCache: boolean = false) {
     try {
-      const res = await fetch(`${ADMIN_FUNCTION_URL}/list`, {
+      const res = await fetchWithTimeout(`${ADMIN_FUNCTION_URL}/list`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
+      }, 1500);
+
       if (!res.ok) {
-        setTeachers(DEMO_TEACHERS);
+        if (!hasCache) setTeachers(DEMO_TEACHERS);
         return;
       }
       const data = await res.json();
       const filteredUsers = (data.users || []).filter((u: UserWithInfo) => u.role === "teacher");
       if (filteredUsers.length === 0) {
-        setTeachers(DEMO_TEACHERS);
+        if (!hasCache) setTeachers(DEMO_TEACHERS);
       } else {
         setTeachers(filteredUsers);
+        setLocalCache("admin_teachers", filteredUsers);
       }
     } catch {
-      setTeachers(DEMO_TEACHERS);
+      if (!hasCache) setTeachers(DEMO_TEACHERS);
     }
   }
 

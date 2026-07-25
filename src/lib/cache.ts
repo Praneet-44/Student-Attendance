@@ -16,6 +16,27 @@ export function withTimeout<T>(promise: PromiseLike<T>, ms: number = 1000): Prom
   });
 }
 
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  ms: number = 1500
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+
+  try {
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 export function getLocalCache<T>(key: string): T | null {
   try {
     const item = localStorage.getItem(`sams_cache_${key}`);
