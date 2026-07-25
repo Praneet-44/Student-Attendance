@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from "react";
 import {
-  GraduationCap, LayoutDashboard, Users, BookOpen, Building2,
+  GraduationCap, LayoutDashboard, Users, Building2,
   ClipboardCheck, FileBarChart, LogOut, Menu, X, Shield,
   CalendarDays, Upload, History, UserCog, FileUp,
 } from "lucide-react";
@@ -19,7 +19,6 @@ const navByRole: Record<UserRole, NavItem[]> = {
     { key: "teachers", label: "Teachers", icon: <UserCog size={20} /> },
     { key: "students", label: "Students", icon: <Users size={20} /> },
     { key: "bulk-import", label: "Bulk Import", icon: <FileUp size={20} /> },
-    { key: "subjects", label: "Subjects", icon: <BookOpen size={20} /> },
     { key: "departments", label: "Departments", icon: <Building2 size={20} /> },
     { key: "reports", label: "Reports", icon: <FileBarChart size={20} /> },
     { key: "audit", label: "Audit Logs", icon: <History size={20} /> },

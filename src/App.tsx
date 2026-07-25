@@ -6,7 +6,6 @@ import { Layout } from "./components/Layout";
 import { AdminDashboard } from "./pages/admin/AdminDashboard";
 import { TeachersPage } from "./pages/admin/TeachersPage";
 import { StudentsPage } from "./pages/admin/StudentsPage";
-import { SubjectsPage } from "./pages/admin/SubjectsPage";
 import { DepartmentsPage } from "./pages/admin/DepartmentsPage";
 import { AdminReports } from "./pages/admin/AdminReports";
 import { AuditLogsPage } from "./pages/admin/AuditLogsPage";
@@ -46,7 +45,7 @@ function AppContent() {
         case "teachers": return <TeachersPage />;
         case "students": return <StudentsPage />;
         case "bulk-import": return <BulkImportStudents />;
-        case "subjects": return <SubjectsPage />;
+
         case "departments": return <DepartmentsPage />;
         case "reports": return <AdminReports />;
         case "audit": return <AuditLogsPage />;
