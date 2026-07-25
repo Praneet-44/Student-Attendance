@@ -12,6 +12,7 @@ import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import { calculateStats, formatDate } from "../../lib/utils";
 import type { Attendance } from "../../lib/types";
+import { DEMO_TEACHER_SUBJECTS, getDemoTeacherAttendance } from "../../lib/demoData";
 
 interface AttendanceWithRelations extends Attendance {
   subjects: { name: string; code: string } | null;
@@ -33,24 +34,44 @@ export function TeacherReports() {
   async function loadData() {
     if (!profile) return;
     setLoading(true);
-    const { data: subs } = await supabase
-      .from("subjects")
-      .select("id, name, code")
-      .eq("teacher_id", profile.id)
-      .order("name");
-    setSubjects(subs || []);
 
-    if (subs && subs.length > 0) {
-      const subjectIds = subs.map((s) => s.id);
-      const { data: att } = await supabase
-        .from("attendance")
-        .select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))")
-        .in("subject_id", subjectIds)
-        .order("date", { ascending: false })
-        .limit(1000);
-      setRecords((att || []) as unknown as AttendanceWithRelations[]);
+    if (profile.id.startsWith("demo-")) {
+      const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
+      setSubjects(DEMO_TEACHER_SUBJECTS);
+      setRecords([...todayAttendance, ...recentAttendance] as unknown as AttendanceWithRelations[]);
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    try {
+      const { data: subs, error: subErr } = await supabase
+        .from("subjects")
+        .select("id, name, code")
+        .eq("teacher_id", profile.id)
+        .order("name");
+
+      if (subErr || !subs || subs.length === 0) {
+        const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
+        setSubjects(DEMO_TEACHER_SUBJECTS);
+        setRecords([...todayAttendance, ...recentAttendance] as unknown as AttendanceWithRelations[]);
+      } else {
+        setSubjects(subs);
+        const subjectIds = subs.map((s) => s.id);
+        const { data: att } = await supabase
+          .from("attendance")
+          .select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))")
+          .in("subject_id", subjectIds)
+          .order("date", { ascending: false })
+          .limit(1000);
+        setRecords((att || []) as unknown as AttendanceWithRelations[]);
+      }
+    } catch {
+      const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
+      setSubjects(DEMO_TEACHER_SUBJECTS);
+      setRecords([...todayAttendance, ...recentAttendance] as unknown as AttendanceWithRelations[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filtered = records.filter((r) => {

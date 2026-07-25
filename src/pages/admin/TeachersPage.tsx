@@ -9,6 +9,13 @@ import { Badge } from "../../components/ui/Badge";
 import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import type { Department, UserWithInfo } from "../../lib/types";
+import { DEMO_DEPARTMENTS } from "../../lib/demoData";
+
+const DEMO_TEACHERS: UserWithInfo[] = [
+  { id: "demo-t-1", name: "Dr. Robert Vance", email: "robert@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { id: "demo-t-1", department_id: "demo-dept-1", created_at: new Date().toISOString() } },
+  { id: "demo-t-2", name: "Prof. Sarah Connor", email: "sarah@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { id: "demo-t-2", department_id: "demo-dept-1", created_at: new Date().toISOString() } },
+  { id: "demo-t-3", name: "Dr. Alan Turing", email: "alan@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { id: "demo-t-3", department_id: "demo-dept-2", created_at: new Date().toISOString() } },
+];
 
 export function TeachersPage() {
   const { showToast } = useToast();
@@ -35,21 +42,39 @@ export function TeachersPage() {
 
   async function loadData() {
     setLoading(true);
-    const [deptRes] = await Promise.all([
-      supabase.from("departments").select("id, name, code").order("name"),
-    ]);
-    setDepartments(deptRes.data || []);
-    await loadTeachers();
-    setLoading(false);
+    try {
+      const [deptRes] = await Promise.all([
+        supabase.from("departments").select("id, name, code").order("name"),
+      ]);
+      setDepartments((deptRes.data || DEMO_DEPARTMENTS) as unknown as Department[]);
+      await loadTeachers();
+    } catch {
+      setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+      setTeachers(DEMO_TEACHERS);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadTeachers() {
-    const res = await fetch(`${ADMIN_FUNCTION_URL}/list`, {
-      headers: { Authorization: `Bearer ${session?.access_token}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    setTeachers((data.users || []).filter((u: UserWithInfo) => u.role === "teacher"));
+    try {
+      const res = await fetch(`${ADMIN_FUNCTION_URL}/list`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) {
+        setTeachers(DEMO_TEACHERS);
+        return;
+      }
+      const data = await res.json();
+      const filteredUsers = (data.users || []).filter((u: UserWithInfo) => u.role === "teacher");
+      if (filteredUsers.length === 0) {
+        setTeachers(DEMO_TEACHERS);
+      } else {
+        setTeachers(filteredUsers);
+      }
+    } catch {
+      setTeachers(DEMO_TEACHERS);
+    }
   }
 
   const filtered = teachers.filter((t) => {

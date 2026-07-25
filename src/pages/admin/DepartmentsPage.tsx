@@ -8,6 +8,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Badge } from "../../components/ui/Badge";
 import { useToast } from "../../components/ui/Toast";
 import type { Department } from "../../lib/types";
+import { DEMO_DEPARTMENTS } from "../../lib/demoData";
 
 export function DepartmentsPage() {
   const { showToast } = useToast();
@@ -23,9 +24,18 @@ export function DepartmentsPage() {
 
   async function loadData() {
     setLoading(true);
-    const { data } = await supabase.from("departments").select("id, name, code, created_at").order("name");
-    setDepartments(data || []);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase.from("departments").select("id, name, code, created_at").order("name");
+      if (error || !data || data.length === 0) {
+        setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+      } else {
+        setDepartments(data);
+      }
+    } catch {
+      setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleCreate() {

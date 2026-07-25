@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button";
 import { calculateStats, formatDate } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
 import type { Attendance, Subject } from "../../lib/types";
+import { DEMO_TEACHER_SUBJECTS, getDemoTeacherAttendance } from "../../lib/demoData";
 
 interface SubjectWithDept extends Subject {
   departments: { name: string; code: string } | null;
@@ -27,46 +28,65 @@ export function TeacherDashboard({ onNavigate }: { onNavigate: (page: string) =>
     if (!profile) return;
     setLoading(true);
 
-    // Get teacher record
-    const { data: _teacher } = await supabase
-      .from("teachers")
-      .select("id")
-      .eq("id", profile.id)
-      .maybeSingle();
-
-    // Get assigned subjects
-    const { data: subs } = await supabase
-      .from("subjects")
-      .select("*, departments(name, code)")
-      .eq("teacher_id", profile.id)
-      .order("name");
-
-    setSubjects((subs || []) as unknown as SubjectWithDept[]);
-
-    // Get today's attendance for teacher's subjects
-    const today = new Date().toISOString().slice(0, 10);
-    if (subs && subs.length > 0) {
-      const subjectIds = subs.map((s) => s.id);
-      const { data: todayAtt } = await supabase
-        .from("attendance")
-        .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
-        .in("subject_id", subjectIds)
-        .eq("date", today)
-        .order("created_at", { ascending: false });
-
-      setTodayAttendance((todayAtt || []) as unknown as Attendance[]);
-
-      const { data: recent } = await supabase
-        .from("attendance")
-        .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
-        .in("subject_id", subjectIds)
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      setRecentAttendance((recent || []) as unknown as Attendance[]);
+    if (profile.id.startsWith("demo-")) {
+      setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
+      const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
+      setTodayAttendance(todayAttendance as unknown as Attendance[]);
+      setRecentAttendance(recentAttendance as unknown as Attendance[]);
+      setLoading(false);
+      return;
     }
 
-    setLoading(false);
+    try {
+      // Get assigned subjects
+      const { data: subs, error: subErr } = await supabase
+        .from("subjects")
+        .select("*, departments(name, code)")
+        .eq("teacher_id", profile.id)
+        .order("name");
+
+      if (subErr || !subs || subs.length === 0) {
+        // Fallback to demo subjects if query returns empty or errors out
+        setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
+        const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
+        setTodayAttendance(todayAttendance as unknown as Attendance[]);
+        setRecentAttendance(recentAttendance as unknown as Attendance[]);
+        setLoading(false);
+        return;
+      }
+
+      setSubjects(subs as unknown as SubjectWithDept[]);
+
+      // Get today's attendance & recent attendance IN PARALLEL
+      const today = new Date().toISOString().slice(0, 10);
+      const subjectIds = subs.map((s) => s.id);
+
+      const [todayRes, recentRes] = await Promise.all([
+        supabase
+          .from("attendance")
+          .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
+          .in("subject_id", subjectIds)
+          .eq("date", today)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("attendance")
+          .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
+          .in("subject_id", subjectIds)
+          .order("created_at", { ascending: false })
+          .limit(10),
+      ]);
+
+      setTodayAttendance((todayRes.data || []) as unknown as Attendance[]);
+      setRecentAttendance((recentRes.data || []) as unknown as Attendance[]);
+    } catch {
+      // Offline fallback
+      setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
+      const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
+      setTodayAttendance(todayAttendance as unknown as Attendance[]);
+      setRecentAttendance(recentAttendance as unknown as Attendance[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (loading) {

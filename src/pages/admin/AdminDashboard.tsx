@@ -7,9 +7,12 @@ import { supabase } from "../../lib/supabase";
 import { Card, StatCard } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { calculateStats, getMonthName } from "../../lib/utils";
+import { useAuth } from "../../context/AuthContext";
 import type { Attendance } from "../../lib/types";
+import { getDemoAdminData } from "../../lib/demoData";
 
 export function AdminDashboard() {
+  const { profile } = useAuth();
   const [stats, setStats] = useState({
     students: 0,
     teachers: 0,
@@ -30,27 +33,12 @@ export function AdminDashboard() {
     loadDashboard();
   }, []);
 
-  async function loadDashboard() {
-    const [students, teachers, subjects, departments, attendance, logs] = await Promise.all([
-      supabase.from("students").select("id", { count: "exact", head: true }),
-      supabase.from("teachers").select("id", { count: "exact", head: true }),
-      supabase.from("subjects").select("id", { count: "exact", head: true }),
-      supabase.from("departments").select("id", { count: "exact", head: true }),
-      supabase.from("attendance").select("id, status, date").order("date", { ascending: false }).limit(500),
-      supabase.from("attendance").select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))").order("created_at", { ascending: false }).limit(10),
-    ]);
-
-    setStats({
-      students: students.count || 0,
-      teachers: teachers.count || 0,
-      subjects: subjects.count || 0,
-      departments: departments.count || 0,
-    });
-
-    const allAttendance = (attendance.data || []) as unknown as Attendance[];
+  function applyDemoData() {
+    const demo = getDemoAdminData();
+    setStats(demo.counts);
+    const allAttendance = demo.attendanceOverview as unknown as Attendance[];
     setAttendanceStats(calculateStats(allAttendance));
 
-    // Monthly breakdown
     const monthlyMap: Record<string, { present: number; total: number }> = {};
     for (const a of allAttendance) {
       const d = new Date(a.date);
@@ -67,9 +55,66 @@ export function AdminDashboard() {
         return { month: `${getMonthName(parseInt(m) - 1)} ${y.slice(2)}`, percentage: val.total > 0 ? Math.round((val.present / val.total) * 100) : 0 };
       });
     setMonthlyData(monthly);
+    setRecentActivity(demo.logs as unknown as Attendance[]);
+  }
 
-    setRecentActivity((logs.data || []) as unknown as Attendance[]);
-    setLoading(false);
+  async function loadDashboard() {
+    setLoading(true);
+
+    if (profile?.id?.startsWith("demo-")) {
+      applyDemoData();
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const [students, teachers, subjects, departments, attendance, logs] = await Promise.all([
+        supabase.from("students").select("id", { count: "exact", head: true }),
+        supabase.from("teachers").select("id", { count: "exact", head: true }),
+        supabase.from("subjects").select("id", { count: "exact", head: true }),
+        supabase.from("departments").select("id", { count: "exact", head: true }),
+        supabase.from("attendance").select("id, status, date").order("date", { ascending: false }).limit(500),
+        supabase.from("attendance").select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))").order("created_at", { ascending: false }).limit(10),
+      ]);
+
+      if (students.error || (students.count === 0 && teachers.count === 0)) {
+        applyDemoData();
+      } else {
+        setStats({
+          students: students.count || 0,
+          teachers: teachers.count || 0,
+          subjects: subjects.count || 0,
+          departments: departments.count || 0,
+        });
+
+        const allAttendance = (attendance.data || []) as unknown as Attendance[];
+        setAttendanceStats(calculateStats(allAttendance));
+
+        // Monthly breakdown
+        const monthlyMap: Record<string, { present: number; total: number }> = {};
+        for (const a of allAttendance) {
+          const d = new Date(a.date);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          if (!monthlyMap[key]) monthlyMap[key] = { present: 0, total: 0 };
+          monthlyMap[key].total++;
+          if (a.status === "present") monthlyMap[key].present++;
+        }
+        const monthly = Object.entries(monthlyMap)
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .slice(-6)
+          .map(([key, val]) => {
+            const [y, m] = key.split("-");
+            return { month: `${getMonthName(parseInt(m) - 1)} ${y.slice(2)}`, percentage: val.total > 0 ? Math.round((val.present / val.total) * 100) : 0 };
+          });
+        setMonthlyData(monthly);
+
+        setRecentActivity((logs.data || []) as unknown as Attendance[]);
+      }
+    } catch {
+      applyDemoData();
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (loading) {

@@ -9,6 +9,7 @@ import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import { formatDateInput } from "../../lib/utils";
 import type { Subject, Student } from "../../lib/types";
+import { DEMO_TEACHER_SUBJECTS, DEMO_STUDENTS } from "../../lib/demoData";
 
 interface StudentWithProfile extends Student {
   profiles: { name: string } | null;
@@ -34,16 +35,37 @@ export function MarkAttendance() {
   async function loadSubjects() {
     if (!profile) return;
     setLoading(true);
-    const { data } = await supabase
-      .from("subjects")
-      .select("id, name, code, semester, department_id")
-      .eq("teacher_id", profile.id)
-      .order("name");
-    setSubjects((data || []) as unknown as Subject[]);
-    if (data && data.length > 0) {
-      setSelectedSubject(data[0].id);
+
+    if (profile.id.startsWith("demo-")) {
+      const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
+      setSubjects(demoSubs);
+      if (demoSubs.length > 0) setSelectedSubject(demoSubs[0].id);
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    try {
+      const { data, error } = await supabase
+        .from("subjects")
+        .select("id, name, code, semester, department_id")
+        .eq("teacher_id", profile.id)
+        .order("name");
+
+      if (error || !data || data.length === 0) {
+        const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
+        setSubjects(demoSubs);
+        if (demoSubs.length > 0) setSelectedSubject(demoSubs[0].id);
+      } else {
+        setSubjects(data as unknown as Subject[]);
+        setSelectedSubject(data[0].id);
+      }
+    } catch {
+      const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
+      setSubjects(demoSubs);
+      if (demoSubs.length > 0) setSelectedSubject(demoSubs[0].id);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -54,41 +76,68 @@ export function MarkAttendance() {
 
   async function loadStudents() {
     setLoading(true);
-    const subject = subjects.find((s) => s.id === selectedSubject);
-    let query = supabase.from("students").select("id, roll_number, department_id, semester, profiles(name)").order("roll_number");
 
-    if (subject?.department_id) {
-      query = query.eq("department_id", subject.department_id);
+    if (profile?.id?.startsWith("demo-") || selectedSubject.startsWith("demo-")) {
+      const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
+      setStudents(demoStus);
+      const defaultMap: Record<string, "present" | "absent"> = {};
+      demoStus.forEach((s) => {
+        defaultMap[s.id] = "present";
+      });
+      setAttendanceMap(defaultMap);
+      setExistingAttendance({});
+      setLoading(false);
+      return;
     }
-    if (subject?.semester) {
-      query = query.eq("semester", subject.semester);
+
+    try {
+      const subject = subjects.find((s) => s.id === selectedSubject);
+      let query = supabase.from("students").select("id, roll_number, department_id, semester, profiles(name)").order("roll_number");
+
+      if (subject?.department_id) query = query.eq("department_id", subject.department_id);
+      if (subject?.semester) query = query.eq("semester", subject.semester);
+
+      const [studentsRes, existingRes] = await Promise.all([
+        query,
+        supabase
+          .from("attendance")
+          .select("id, student_id, status")
+          .eq("subject_id", selectedSubject)
+          .eq("date", date),
+      ]);
+
+      const stus = (studentsRes.data || []) as unknown as StudentWithProfile[];
+      if (stus.length === 0) {
+        const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
+        setStudents(demoStus);
+        const defaultMap: Record<string, "present" | "absent"> = {};
+        demoStus.forEach((s) => { defaultMap[s.id] = "present"; });
+        setAttendanceMap(defaultMap);
+      } else {
+        setStudents(stus);
+        const existingMap: Record<string, string> = {};
+        const attMap: Record<string, "present" | "absent"> = {};
+        (existingRes.data || []).forEach((a) => {
+          existingMap[a.student_id] = a.id;
+          attMap[a.student_id] = a.status as "present" | "absent";
+        });
+        setExistingAttendance(existingMap);
+
+        const defaultMap: Record<string, "present" | "absent"> = {};
+        stus.forEach((s) => {
+          defaultMap[s.id] = attMap[s.id] || "present";
+        });
+        setAttendanceMap(defaultMap);
+      }
+    } catch {
+      const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
+      setStudents(demoStus);
+      const defaultMap: Record<string, "present" | "absent"> = {};
+      demoStus.forEach((s) => { defaultMap[s.id] = "present"; });
+      setAttendanceMap(defaultMap);
+    } finally {
+      setLoading(false);
     }
-
-    const { data } = await query;
-    setStudents((data || []) as unknown as StudentWithProfile[]);
-
-    // Load existing attendance for this subject + date
-    const { data: existing } = await supabase
-      .from("attendance")
-      .select("id, student_id, status")
-      .eq("subject_id", selectedSubject)
-      .eq("date", date);
-
-    const existingMap: Record<string, string> = {};
-    const attMap: Record<string, "present" | "absent"> = {};
-    (existing || []).forEach((a) => {
-      existingMap[a.student_id] = a.id;
-      attMap[a.student_id] = a.status as "present" | "absent";
-    });
-    setExistingAttendance(existingMap);
-
-    // Default all to present if no existing record
-    const defaultMap: Record<string, "present" | "absent"> = {};
-    (data || []).forEach((s) => {
-      defaultMap[s.id] = attMap[s.id] || "present";
-    });
-    setAttendanceMap(defaultMap);
-    setLoading(false);
   }
 
   const filteredStudents = students.filter((s) => {

@@ -9,6 +9,7 @@ import { Badge } from "../../components/ui/Badge";
 import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import type { Department, UserWithInfo } from "../../lib/types";
+import { DEMO_DEPARTMENTS, DEMO_STUDENTS } from "../../lib/demoData";
 
 export function StudentsPage() {
   const { showToast } = useToast();
@@ -39,19 +40,57 @@ export function StudentsPage() {
 
   async function loadData() {
     setLoading(true);
-    const { data: depts } = await supabase.from("departments").select("id, name, code").order("name");
-    setDepartments(depts || []);
-    await loadStudents();
-    setLoading(false);
+    try {
+      const [deptRes] = await Promise.all([
+        supabase.from("departments").select("id, name, code").order("name"),
+      ]);
+      setDepartments((deptRes.data || DEMO_DEPARTMENTS) as unknown as Department[]);
+      await loadStudents();
+    } catch {
+      setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+      applyDemoStudents();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function applyDemoStudents() {
+    const demoUsers: UserWithInfo[] = DEMO_STUDENTS.map((s) => ({
+      id: s.id,
+      name: s.profiles.name,
+      email: `${s.roll_number.toLowerCase()}@university.edu`,
+      role: "student" as const,
+      created_at: new Date().toISOString(),
+      student_info: {
+        id: s.id,
+        roll_number: s.roll_number,
+        department_id: s.department_id,
+        semester: s.semester,
+        created_at: new Date().toISOString(),
+      },
+    }));
+    setStudents(demoUsers);
   }
 
   async function loadStudents() {
-    const res = await fetch(`${ADMIN_FUNCTION_URL}/list`, {
-      headers: { Authorization: `Bearer ${session?.access_token}` },
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    setStudents((data.users || []).filter((u: UserWithInfo) => u.role === "student"));
+    try {
+      const res = await fetch(`${ADMIN_FUNCTION_URL}/list`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) {
+        applyDemoStudents();
+        return;
+      }
+      const data = await res.json();
+      const filteredUsers = (data.users || []).filter((u: UserWithInfo) => u.role === "student");
+      if (filteredUsers.length === 0) {
+        applyDemoStudents();
+      } else {
+        setStudents(filteredUsers);
+      }
+    } catch {
+      applyDemoStudents();
+    }
   }
 
   const filtered = students.filter((s) => {

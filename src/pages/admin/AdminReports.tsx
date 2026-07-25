@@ -11,6 +11,7 @@ import { Badge } from "../../components/ui/Badge";
 import { useToast } from "../../components/ui/Toast";
 import { calculateStats, formatDate } from "../../lib/utils";
 import type { Attendance, Subject } from "../../lib/types";
+import { DEMO_TEACHER_SUBJECTS, getDemoAdminData } from "../../lib/demoData";
 
 interface AttendanceWithRelations extends Attendance {
   subjects: { name: string; code: string } | null;
@@ -34,13 +35,27 @@ export function AdminReports() {
 
   async function loadData() {
     setLoading(true);
-    const [attRes, subRes] = await Promise.all([
-      supabase.from("attendance").select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))").order("date", { ascending: false }).limit(1000),
-      supabase.from("subjects").select("id, name, code").order("name"),
-    ]);
-    setRecords((attRes.data || []) as unknown as AttendanceWithRelations[]);
-    setSubjects((subRes.data || []) as unknown as Subject[]);
-    setLoading(false);
+    try {
+      const [attRes, subRes] = await Promise.all([
+        supabase.from("attendance").select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))").order("date", { ascending: false }).limit(1000),
+        supabase.from("subjects").select("id, name, code").order("name"),
+      ]);
+
+      if (attRes.error || !attRes.data || attRes.data.length === 0) {
+        const demo = getDemoAdminData();
+        setRecords(demo.logs as unknown as AttendanceWithRelations[]);
+        setSubjects(DEMO_TEACHER_SUBJECTS as unknown as Subject[]);
+      } else {
+        setRecords(attRes.data as unknown as AttendanceWithRelations[]);
+        setSubjects((subRes.data || DEMO_TEACHER_SUBJECTS) as unknown as Subject[]);
+      }
+    } catch {
+      const demo = getDemoAdminData();
+      setRecords(demo.logs as unknown as AttendanceWithRelations[]);
+      setSubjects(DEMO_TEACHER_SUBJECTS as unknown as Subject[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filtered = records.filter((r) => {

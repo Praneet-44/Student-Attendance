@@ -12,6 +12,7 @@ import {
   getAttendanceBarColor, groupBySubject, getMonthName, formatDate,
 } from "../../lib/utils";
 import type { Attendance, Student } from "../../lib/types";
+import { getDemoStudentData } from "../../lib/demoData";
 
 interface StudentWithRelations extends Student {
   profiles: { name: string } | null;
@@ -38,21 +39,43 @@ export function StudentDashboard() {
     if (!profile) return;
     setLoading(true);
 
-    const { data: student } = await supabase
-      .from("students")
-      .select("id, roll_number, department_id, semester, profiles(name), departments(name, code)")
-      .eq("id", profile.id)
-      .maybeSingle();
-    setStudentInfo(student as StudentWithRelations | null);
+    if (profile.id.startsWith("demo-")) {
+      const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
+      setStudentInfo(demoInfo as unknown as StudentWithRelations);
+      setRecords(demoRecords as unknown as AttendanceWithSubject[]);
+      setLoading(false);
+      return;
+    }
 
-    const { data: att } = await supabase
-      .from("attendance")
-      .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
-      .eq("student_id", profile.id)
-      .order("date", { ascending: false });
+    try {
+      const [studentRes, attRes] = await Promise.all([
+        supabase
+          .from("students")
+          .select("id, roll_number, department_id, semester, profiles(name), departments(name, code)")
+          .eq("id", profile.id)
+          .maybeSingle(),
+        supabase
+          .from("attendance")
+          .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
+          .eq("student_id", profile.id)
+          .order("date", { ascending: false }),
+      ]);
 
-    setRecords((att || []) as unknown as AttendanceWithSubject[]);
-    setLoading(false);
+      if (studentRes.error || !studentRes.data) {
+        const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
+        setStudentInfo(demoInfo as unknown as StudentWithRelations);
+        setRecords(demoRecords as unknown as AttendanceWithSubject[]);
+      } else {
+        setStudentInfo(studentRes.data as StudentWithRelations);
+        setRecords((attRes.data || []) as unknown as AttendanceWithSubject[]);
+      }
+    } catch {
+      const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
+      setStudentInfo(demoInfo as unknown as StudentWithRelations);
+      setRecords(demoRecords as unknown as AttendanceWithSubject[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (loading) {

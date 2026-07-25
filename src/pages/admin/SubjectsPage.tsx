@@ -8,6 +8,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Badge } from "../../components/ui/Badge";
 import { useToast } from "../../components/ui/Toast";
 import type { Department, Subject, Teacher } from "../../lib/types";
+import { DEMO_TEACHER_SUBJECTS, DEMO_DEPARTMENTS } from "../../lib/demoData";
 
 interface SubjectWithRelations extends Subject {
   departments: { name: string; code: string } | null;
@@ -38,15 +39,27 @@ export function SubjectsPage() {
 
   async function loadData() {
     setLoading(true);
-    const [subRes, deptRes, teacherRes] = await Promise.all([
-      supabase.from("subjects").select("*, departments(name, code), teachers(id, profiles(name))").order("name"),
-      supabase.from("departments").select("id, name, code").order("name"),
-      supabase.from("teachers").select("id, department_id, profiles(name)").order("created_at"),
-    ]);
-    setSubjects((subRes.data || []) as unknown as SubjectWithRelations[]);
-    setDepartments((deptRes.data || []) as unknown as Department[]);
-    setTeachers((teacherRes.data || []) as unknown as Teacher[]);
-    setLoading(false);
+    try {
+      const [subRes, deptRes, teacherRes] = await Promise.all([
+        supabase.from("subjects").select("*, departments(name, code), teachers(id, profiles(name))").order("name"),
+        supabase.from("departments").select("id, name, code").order("name"),
+        supabase.from("teachers").select("id, department_id, profiles(name)").order("created_at"),
+      ]);
+
+      if (subRes.error || !subRes.data || subRes.data.length === 0) {
+        setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithRelations[]);
+        setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+      } else {
+        setSubjects(subRes.data as unknown as SubjectWithRelations[]);
+        setDepartments((deptRes.data || DEMO_DEPARTMENTS) as unknown as Department[]);
+        setTeachers((teacherRes.data || []) as unknown as Teacher[]);
+      }
+    } catch {
+      setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithRelations[]);
+      setDepartments(DEMO_DEPARTMENTS as unknown as Department[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filtered = subjects.filter((s) => {

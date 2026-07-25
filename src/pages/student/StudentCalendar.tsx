@@ -6,6 +6,7 @@ import { Badge } from "../../components/ui/Badge";
 import { useAuth } from "../../context/AuthContext";
 import { getMonthName } from "../../lib/utils";
 import type { Attendance } from "../../lib/types";
+import { getDemoStudentData } from "../../lib/demoData";
 
 interface AttendanceWithSubject extends Attendance {
   subjects: { name: string; code: string } | null;
@@ -23,13 +24,34 @@ export function StudentCalendar() {
 
   async function loadData() {
     if (!profile) return;
-    const { data } = await supabase
-      .from("attendance")
-      .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
-      .eq("student_id", profile.id)
-      .order("date", { ascending: false });
-    setRecords((data || []) as unknown as AttendanceWithSubject[]);
-    setLoading(false);
+    setLoading(true);
+
+    if (profile.id.startsWith("demo-")) {
+      const { records: demoRecords } = getDemoStudentData();
+      setRecords(demoRecords as unknown as AttendanceWithSubject[]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
+        .eq("student_id", profile.id)
+        .order("date", { ascending: false });
+
+      if (error || !data || data.length === 0) {
+        const { records: demoRecords } = getDemoStudentData();
+        setRecords(demoRecords as unknown as AttendanceWithSubject[]);
+      } else {
+        setRecords(data as unknown as AttendanceWithSubject[]);
+      }
+    } catch {
+      const { records: demoRecords } = getDemoStudentData();
+      setRecords(demoRecords as unknown as AttendanceWithSubject[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const year = currentMonth.getFullYear();

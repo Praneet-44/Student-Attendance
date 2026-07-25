@@ -12,6 +12,7 @@ import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import { calculateStats, formatDate, getAttendanceColor } from "../../lib/utils";
 import type { Attendance, Student } from "../../lib/types";
+import { getDemoStudentData } from "../../lib/demoData";
 
 interface AttendanceWithSubject extends Attendance {
   subjects: { name: string; code: string } | null;
@@ -39,29 +40,67 @@ export function StudentReports() {
     if (!profile) return;
     setLoading(true);
 
-    const { data: student } = await supabase
-      .from("students")
-      .select("id, roll_number, department_id, semester, profiles(name), departments(name, code)")
-      .eq("id", profile.id)
-      .maybeSingle();
-    setStudentInfo(student as StudentWithRelations | null);
+    if (profile.id.startsWith("demo-")) {
+      const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
+      setStudentInfo(demoInfo as unknown as StudentWithRelations);
+      const atts = demoRecords as unknown as AttendanceWithSubject[];
+      setRecords(atts);
+      const subjMap = new Map<string, { id: string; name: string; code: string }>();
+      atts.forEach((a) => {
+        if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
+      });
+      setSubjects(Array.from(subjMap.values()));
+      setLoading(false);
+      return;
+    }
 
-    const { data: att } = await supabase
-      .from("attendance")
-      .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
-      .eq("student_id", profile.id)
-      .order("date", { ascending: false });
-    setRecords((att || []) as unknown as AttendanceWithSubject[]);
+    try {
+      const [studentRes, attRes] = await Promise.all([
+        supabase
+          .from("students")
+          .select("id, roll_number, department_id, semester, profiles(name), departments(name, code)")
+          .eq("id", profile.id)
+          .maybeSingle(),
+        supabase
+          .from("attendance")
+          .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
+          .eq("student_id", profile.id)
+          .order("date", { ascending: false }),
+      ]);
 
-    const subjMap = new Map<string, { id: string; name: string; code: string }>();
-    (att || []).forEach((r) => {
-      const a = r as unknown as AttendanceWithSubject;
-      if (a.subjects) {
-        subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
+      if (studentRes.error || !studentRes.data) {
+        const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
+        setStudentInfo(demoInfo as unknown as StudentWithRelations);
+        const atts = demoRecords as unknown as AttendanceWithSubject[];
+        setRecords(atts);
+        const subjMap = new Map<string, { id: string; name: string; code: string }>();
+        atts.forEach((a) => {
+          if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
+        });
+        setSubjects(Array.from(subjMap.values()));
+      } else {
+        setStudentInfo(studentRes.data as StudentWithRelations);
+        const atts = (attRes.data || []) as unknown as AttendanceWithSubject[];
+        setRecords(atts);
+        const subjMap = new Map<string, { id: string; name: string; code: string }>();
+        atts.forEach((a) => {
+          if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
+        });
+        setSubjects(Array.from(subjMap.values()));
       }
-    });
-    setSubjects(Array.from(subjMap.values()));
-    setLoading(false);
+    } catch {
+      const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
+      setStudentInfo(demoInfo as unknown as StudentWithRelations);
+      const atts = demoRecords as unknown as AttendanceWithSubject[];
+      setRecords(atts);
+      const subjMap = new Map<string, { id: string; name: string; code: string }>();
+      atts.forEach((a) => {
+        if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
+      });
+      setSubjects(Array.from(subjMap.values()));
+    } finally {
+      setLoading(false);
+    }
   }
 
   const filtered = records.filter((r) => {
