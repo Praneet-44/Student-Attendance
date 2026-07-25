@@ -10,24 +10,15 @@ import { calculateStats, getMonthName } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
 import type { Attendance } from "../../lib/types";
 import { getDemoAdminData } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 export function AdminDashboard() {
   const { profile } = useAuth();
-  const [stats, setStats] = useState({
-    students: 0,
-    teachers: 0,
-    subjects: 0,
-    departments: 0,
-  });
-  const [attendanceStats, setAttendanceStats] = useState({
-    total: 0,
-    present: 0,
-    absent: 0,
-    percentage: 0,
-  });
-  const [monthlyData, setMonthlyData] = useState<{ month: string; percentage: number }[]>([]);
-  const [recentActivity, setRecentActivity] = useState<Attendance[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(() => getLocalCache("admin_stats") || { students: 0, teachers: 0, subjects: 0, departments: 0 });
+  const [attendanceStats, setAttendanceStats] = useState(() => getLocalCache("admin_att_stats") || { total: 0, present: 0, absent: 0, percentage: 0 });
+  const [monthlyData, setMonthlyData] = useState<{ month: string; percentage: number }[]>(() => getLocalCache("admin_monthly") || []);
+  const [recentActivity, setRecentActivity] = useState<Attendance[]>(() => getLocalCache("admin_logs") || []);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("admin_stats"));
 
   useEffect(() => {
     loadDashboard();
@@ -59,7 +50,8 @@ export function AdminDashboard() {
   }
 
   async function loadDashboard() {
-    setLoading(true);
+    const hasCache = getLocalCache("admin_stats") !== null;
+    if (!hasCache) setLoading(true);
 
     if (profile?.id?.startsWith("demo-")) {
       applyDemoData();
@@ -68,27 +60,34 @@ export function AdminDashboard() {
     }
 
     try {
-      const [students, teachers, subjects, departments, attendance, logs] = await Promise.all([
-        supabase.from("students").select("id", { count: "exact", head: true }),
-        supabase.from("teachers").select("id", { count: "exact", head: true }),
-        supabase.from("subjects").select("id", { count: "exact", head: true }),
-        supabase.from("departments").select("id", { count: "exact", head: true }),
-        supabase.from("attendance").select("id, status, date").order("date", { ascending: false }).limit(500),
-        supabase.from("attendance").select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))").order("created_at", { ascending: false }).limit(10),
-      ]);
+      const [students, teachers, subjects, departments, attendance, logs] = await withTimeout(
+        Promise.all([
+          supabase.from("students").select("id", { count: "exact", head: true }),
+          supabase.from("teachers").select("id", { count: "exact", head: true }),
+          supabase.from("subjects").select("id", { count: "exact", head: true }),
+          supabase.from("departments").select("id", { count: "exact", head: true }),
+          supabase.from("attendance").select("id, status, date").order("date", { ascending: false }).limit(500),
+          supabase.from("attendance").select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))").order("created_at", { ascending: false }).limit(10),
+        ]),
+        1000
+      );
 
       if (students.error || (students.count === 0 && teachers.count === 0)) {
-        applyDemoData();
+        if (!hasCache) applyDemoData();
       } else {
-        setStats({
+        const newStats = {
           students: students.count || 0,
           teachers: teachers.count || 0,
           subjects: subjects.count || 0,
           departments: departments.count || 0,
-        });
+        };
+        setStats(newStats);
+        setLocalCache("admin_stats", newStats);
 
         const allAttendance = (attendance.data || []) as unknown as Attendance[];
-        setAttendanceStats(calculateStats(allAttendance));
+        const newAttStats = calculateStats(allAttendance);
+        setAttendanceStats(newAttStats);
+        setLocalCache("admin_att_stats", newAttStats);
 
         // Monthly breakdown
         const monthlyMap: Record<string, { present: number; total: number }> = {};
@@ -107,11 +106,14 @@ export function AdminDashboard() {
             return { month: `${getMonthName(parseInt(m) - 1)} ${y.slice(2)}`, percentage: val.total > 0 ? Math.round((val.present / val.total) * 100) : 0 };
           });
         setMonthlyData(monthly);
+        setLocalCache("admin_monthly", monthly);
 
-        setRecentActivity((logs.data || []) as unknown as Attendance[]);
+        const fetchedLogs = (logs.data || []) as unknown as Attendance[];
+        setRecentActivity(fetchedLogs);
+        setLocalCache("admin_logs", fetchedLogs);
       }
     } catch {
-      applyDemoData();
+      if (!hasCache) applyDemoData();
     } finally {
       setLoading(false);
     }

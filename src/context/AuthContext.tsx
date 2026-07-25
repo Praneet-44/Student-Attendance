@@ -8,6 +8,7 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import type { Profile, UserRole } from "../lib/types";
+import { withTimeout } from "../lib/cache";
 
 interface AuthContextType {
   session: Session | null;
@@ -49,9 +50,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // 2. Try fetching Supabase session
-    supabase.auth
-      .getSession()
+    // 2. Try fetching Supabase session with 1s timeout
+    withTimeout(supabase.auth.getSession(), 1000)
       .then(({ data }) => {
         if (data.session) {
           setSession(data.session);
@@ -61,7 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
-        // If Supabase fetch fails (e.g. network/DNS issue), keep savedDemo if present or finish loading
         if (!savedDemo) {
           setLoading(false);
         }
@@ -85,19 +84,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadProfile(userId: string, authUser?: any) {
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, name, role, created_at")
-        .eq("id", userId)
-        .maybeSingle();
+      const res = await withTimeout(
+        supabase
+          .from("profiles")
+          .select("id, name, role, created_at")
+          .eq("id", userId)
+          .maybeSingle(),
+        1000
+      );
 
-      if (!error && data) {
-        setProfile(data);
+      if (!res.error && res.data) {
+        setProfile(res.data);
         setLoading(false);
         return;
       }
     } catch {
-      // Supabase query failed (e.g. offline/network)
+      // Supabase query failed or timed out
     }
 
     // Fallback profile if Supabase profile row missing or query failed

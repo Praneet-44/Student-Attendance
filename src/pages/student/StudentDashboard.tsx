@@ -13,6 +13,7 @@ import {
 } from "../../lib/utils";
 import type { Attendance, Student } from "../../lib/types";
 import { getDemoStudentData } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 interface StudentWithRelations extends Student {
   profiles: { name: string } | null;
@@ -27,9 +28,9 @@ const MIN_ATTENDANCE = 75;
 
 export function StudentDashboard() {
   const { profile } = useAuth();
-  const [studentInfo, setStudentInfo] = useState<StudentWithRelations | null>(null);
-  const [records, setRecords] = useState<AttendanceWithSubject[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [studentInfo, setStudentInfo] = useState<StudentWithRelations | null>(() => getLocalCache("student_info"));
+  const [records, setRecords] = useState<AttendanceWithSubject[]>(() => getLocalCache("student_records") || []);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("student_info"));
 
   useEffect(() => {
     loadData();
@@ -37,7 +38,9 @@ export function StudentDashboard() {
 
   async function loadData() {
     if (!profile) return;
-    setLoading(true);
+
+    const hasCache = getLocalCache("student_info") !== null;
+    if (!hasCache) setLoading(true);
 
     if (profile.id.startsWith("demo-")) {
       const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
@@ -48,31 +51,42 @@ export function StudentDashboard() {
     }
 
     try {
-      const [studentRes, attRes] = await Promise.all([
-        supabase
-          .from("students")
-          .select("id, roll_number, department_id, semester, profiles(name), departments(name, code)")
-          .eq("id", profile.id)
-          .maybeSingle(),
-        supabase
-          .from("attendance")
-          .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
-          .eq("student_id", profile.id)
-          .order("date", { ascending: false }),
-      ]);
+      const [studentRes, attRes] = await withTimeout(
+        Promise.all([
+          supabase
+            .from("students")
+            .select("id, roll_number, department_id, semester, profiles(name), departments(name, code)")
+            .eq("id", profile.id)
+            .maybeSingle(),
+          supabase
+            .from("attendance")
+            .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
+            .eq("student_id", profile.id)
+            .order("date", { ascending: false }),
+        ]),
+        1000
+      );
 
       if (studentRes.error || !studentRes.data) {
+        if (!hasCache) {
+          const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
+          setStudentInfo(demoInfo as unknown as StudentWithRelations);
+          setRecords(demoRecords as unknown as AttendanceWithSubject[]);
+        }
+      } else {
+        const fetchedInfo = studentRes.data as StudentWithRelations;
+        const fetchedRecords = (attRes.data || []) as unknown as AttendanceWithSubject[];
+        setStudentInfo(fetchedInfo);
+        setRecords(fetchedRecords);
+        setLocalCache("student_info", fetchedInfo);
+        setLocalCache("student_records", fetchedRecords);
+      }
+    } catch {
+      if (!hasCache) {
         const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
         setStudentInfo(demoInfo as unknown as StudentWithRelations);
         setRecords(demoRecords as unknown as AttendanceWithSubject[]);
-      } else {
-        setStudentInfo(studentRes.data as StudentWithRelations);
-        setRecords((attRes.data || []) as unknown as AttendanceWithSubject[]);
       }
-    } catch {
-      const { studentInfo: demoInfo, records: demoRecords } = getDemoStudentData();
-      setStudentInfo(demoInfo as unknown as StudentWithRelations);
-      setRecords(demoRecords as unknown as AttendanceWithSubject[]);
     } finally {
       setLoading(false);
     }

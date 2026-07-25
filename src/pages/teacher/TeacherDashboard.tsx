@@ -8,6 +8,7 @@ import { calculateStats, formatDate } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
 import type { Attendance, Subject } from "../../lib/types";
 import { DEMO_TEACHER_SUBJECTS, getDemoTeacherAttendance } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 interface SubjectWithDept extends Subject {
   departments: { name: string; code: string } | null;
@@ -15,10 +16,10 @@ interface SubjectWithDept extends Subject {
 
 export function TeacherDashboard({ onNavigate }: { onNavigate: (page: string) => void }) {
   const { profile } = useAuth();
-  const [subjects, setSubjects] = useState<SubjectWithDept[]>([]);
-  const [todayAttendance, setTodayAttendance] = useState<Attendance[]>([]);
-  const [recentAttendance, setRecentAttendance] = useState<Attendance[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [subjects, setSubjects] = useState<SubjectWithDept[]>(() => getLocalCache("teacher_subjects") || []);
+  const [todayAttendance, setTodayAttendance] = useState<Attendance[]>(() => getLocalCache("teacher_today") || []);
+  const [recentAttendance, setRecentAttendance] = useState<Attendance[]>(() => getLocalCache("teacher_recent") || []);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("teacher_subjects"));
 
   useEffect(() => {
     loadData();
@@ -26,64 +27,83 @@ export function TeacherDashboard({ onNavigate }: { onNavigate: (page: string) =>
 
   async function loadData() {
     if (!profile) return;
-    setLoading(true);
+
+    const hasCache = getLocalCache("teacher_subjects") !== null;
+    if (!hasCache) setLoading(true);
 
     if (profile.id.startsWith("demo-")) {
       setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
-      const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
-      setTodayAttendance(todayAttendance as unknown as Attendance[]);
-      setRecentAttendance(recentAttendance as unknown as Attendance[]);
+      const { todayAttendance: demoToday, recentAttendance: demoRecent } = getDemoTeacherAttendance();
+      setTodayAttendance(demoToday as unknown as Attendance[]);
+      setRecentAttendance(demoRecent as unknown as Attendance[]);
       setLoading(false);
       return;
     }
 
     try {
-      // Get assigned subjects
-      const { data: subs, error: subErr } = await supabase
-        .from("subjects")
-        .select("*, departments(name, code)")
-        .eq("teacher_id", profile.id)
-        .order("name");
+      // Get assigned subjects with 1s timeout
+      const subRes = await withTimeout(
+        supabase
+          .from("subjects")
+          .select("*, departments(name, code)")
+          .eq("teacher_id", profile.id)
+          .order("name"),
+        1000
+      );
 
-      if (subErr || !subs || subs.length === 0) {
-        // Fallback to demo subjects if query returns empty or errors out
-        setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
-        const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
-        setTodayAttendance(todayAttendance as unknown as Attendance[]);
-        setRecentAttendance(recentAttendance as unknown as Attendance[]);
+      const subs = subRes.data;
+      if (subRes.error || !subs || subs.length === 0) {
+        if (!hasCache) {
+          setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
+          const { todayAttendance: demoToday, recentAttendance: demoRecent } = getDemoTeacherAttendance();
+          setTodayAttendance(demoToday as unknown as Attendance[]);
+          setRecentAttendance(demoRecent as unknown as Attendance[]);
+        }
         setLoading(false);
         return;
       }
 
-      setSubjects(subs as unknown as SubjectWithDept[]);
+      const fetchedSubjects = subs as unknown as SubjectWithDept[];
+      setSubjects(fetchedSubjects);
+      setLocalCache("teacher_subjects", fetchedSubjects);
 
-      // Get today's attendance & recent attendance IN PARALLEL
+      // Get today's attendance & recent attendance IN PARALLEL with 1s timeout
       const today = new Date().toISOString().slice(0, 10);
       const subjectIds = subs.map((s) => s.id);
 
-      const [todayRes, recentRes] = await Promise.all([
-        supabase
-          .from("attendance")
-          .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
-          .in("subject_id", subjectIds)
-          .eq("date", today)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("attendance")
-          .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
-          .in("subject_id", subjectIds)
-          .order("created_at", { ascending: false })
-          .limit(10),
-      ]);
+      const [todayRes, recentRes] = await withTimeout(
+        Promise.all([
+          supabase
+            .from("attendance")
+            .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
+            .in("subject_id", subjectIds)
+            .eq("date", today)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("attendance")
+            .select("id, student_id, subject_id, date, status, subjects(name, code), students(roll_number, profiles(name))")
+            .in("subject_id", subjectIds)
+            .order("created_at", { ascending: false })
+            .limit(10),
+        ]),
+        1000
+      );
 
-      setTodayAttendance((todayRes.data || []) as unknown as Attendance[]);
-      setRecentAttendance((recentRes.data || []) as unknown as Attendance[]);
+      const fetchedToday = (todayRes.data || []) as unknown as Attendance[];
+      const fetchedRecent = (recentRes.data || []) as unknown as Attendance[];
+
+      setTodayAttendance(fetchedToday);
+      setRecentAttendance(fetchedRecent);
+      setLocalCache("teacher_today", fetchedToday);
+      setLocalCache("teacher_recent", fetchedRecent);
     } catch {
-      // Offline fallback
-      setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
-      const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
-      setTodayAttendance(todayAttendance as unknown as Attendance[]);
-      setRecentAttendance(recentAttendance as unknown as Attendance[]);
+      // Fast fallback to demo data if query times out or fails and no cache present
+      if (!hasCache) {
+        setSubjects(DEMO_TEACHER_SUBJECTS as unknown as SubjectWithDept[]);
+        const { todayAttendance: demoToday, recentAttendance: demoRecent } = getDemoTeacherAttendance();
+        setTodayAttendance(demoToday as unknown as Attendance[]);
+        setRecentAttendance(demoRecent as unknown as Attendance[]);
+      }
     } finally {
       setLoading(false);
     }
