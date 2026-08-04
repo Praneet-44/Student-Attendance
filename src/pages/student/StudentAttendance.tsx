@@ -8,6 +8,7 @@ import { useAuth } from "../../context/AuthContext";
 import { calculateStats, formatDate, getAttendanceColor } from "../../lib/utils";
 import type { Attendance } from "../../lib/types";
 import { getDemoStudentData } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 interface AttendanceWithSubject extends Attendance {
   subjects: { name: string; code: string } | null;
@@ -15,9 +16,9 @@ interface AttendanceWithSubject extends Attendance {
 
 export function StudentAttendance() {
   const { profile } = useAuth();
-  const [records, setRecords] = useState<AttendanceWithSubject[]>([]);
-  const [subjects, setSubjects] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<AttendanceWithSubject[]>(() => getLocalCache("student_att_records") || []);
+  const [subjects, setSubjects] = useState<{ id: string; name: string; code: string }[]>(() => getLocalCache("student_att_subjects") || []);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("student_att_records"));
   const [filters, setFilters] = useState({ subject_id: "", month: "" });
 
   useEffect(() => {
@@ -26,7 +27,8 @@ export function StudentAttendance() {
 
   async function loadData() {
     if (!profile) return;
-    setLoading(true);
+    const hasCache = getLocalCache("student_att_records") !== null;
+    if (!hasCache) setLoading(true);
 
     if (profile.id.startsWith("demo-")) {
       const { records: demoRecords } = getDemoStudentData();
@@ -42,13 +44,40 @@ export function StudentAttendance() {
     }
 
     try {
-      const { data: att, error } = await supabase
-        .from("attendance")
-        .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
-        .eq("student_id", profile.id)
-        .order("date", { ascending: false });
+      const { data: att, error } = await withTimeout(
+        supabase
+          .from("attendance")
+          .select("id, student_id, subject_id, date, status, created_at, subjects(name, code)")
+          .eq("student_id", profile.id)
+          .order("date", { ascending: false }),
+        1500
+      );
 
       if (error || !att || att.length === 0) {
+        if (!hasCache) {
+          const { records: demoRecords } = getDemoStudentData();
+          const atts = demoRecords as unknown as AttendanceWithSubject[];
+          setRecords(atts);
+          const subjMap = new Map<string, { id: string; name: string; code: string }>();
+          atts.forEach((a) => {
+            if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
+          });
+          setSubjects(Array.from(subjMap.values()));
+        }
+      } else {
+        const atts = att as unknown as AttendanceWithSubject[];
+        setRecords(atts);
+        setLocalCache("student_att_records", atts);
+        const subjMap = new Map<string, { id: string; name: string; code: string }>();
+        atts.forEach((a) => {
+          if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
+        });
+        const subList = Array.from(subjMap.values());
+        setSubjects(subList);
+        setLocalCache("student_att_subjects", subList);
+      }
+    } catch {
+      if (!hasCache) {
         const { records: demoRecords } = getDemoStudentData();
         const atts = demoRecords as unknown as AttendanceWithSubject[];
         setRecords(atts);
@@ -57,24 +86,7 @@ export function StudentAttendance() {
           if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
         });
         setSubjects(Array.from(subjMap.values()));
-      } else {
-        const atts = att as unknown as AttendanceWithSubject[];
-        setRecords(atts);
-        const subjMap = new Map<string, { id: string; name: string; code: string }>();
-        atts.forEach((a) => {
-          if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
-        });
-        setSubjects(Array.from(subjMap.values()));
       }
-    } catch {
-      const { records: demoRecords } = getDemoStudentData();
-      const atts = demoRecords as unknown as AttendanceWithSubject[];
-      setRecords(atts);
-      const subjMap = new Map<string, { id: string; name: string; code: string }>();
-      atts.forEach((a) => {
-        if (a.subjects) subjMap.set(a.subject_id, { id: a.subject_id, name: a.subjects.name, code: a.subjects.code });
-      });
-      setSubjects(Array.from(subjMap.values()));
     } finally {
       setLoading(false);
     }
