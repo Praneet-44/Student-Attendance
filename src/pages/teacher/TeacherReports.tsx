@@ -13,6 +13,7 @@ import { useAuth } from "../../context/AuthContext";
 import { calculateStats, formatDate } from "../../lib/utils";
 import type { Attendance } from "../../lib/types";
 import { DEMO_TEACHER_SUBJECTS, getDemoTeacherAttendance } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 interface AttendanceWithRelations extends Attendance {
   subjects: { name: string; code: string } | null;
@@ -22,9 +23,9 @@ interface AttendanceWithRelations extends Attendance {
 export function TeacherReports() {
   const { showToast } = useToast();
   const { profile } = useAuth();
-  const [records, setRecords] = useState<AttendanceWithRelations[]>([]);
-  const [subjects, setSubjects] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<AttendanceWithRelations[]>(() => getLocalCache("teacher_reports_records") || []);
+  const [subjects, setSubjects] = useState<{ id: string; name: string; code: string }[]>(() => getLocalCache("teacher_reports_subjects") || []);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("teacher_reports_subjects"));
   const [filters, setFilters] = useState({ subject_id: "", month: "" });
 
   useEffect(() => {
@@ -33,7 +34,8 @@ export function TeacherReports() {
 
   async function loadData() {
     if (!profile) return;
-    setLoading(true);
+    const hasCache = getLocalCache("teacher_reports_subjects") !== null;
+    if (!hasCache) setLoading(true);
 
     if (profile.id.startsWith("demo-")) {
       const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
@@ -44,31 +46,44 @@ export function TeacherReports() {
     }
 
     try {
-      const { data: subs, error: subErr } = await supabase
-        .from("subjects")
-        .select("id, name, code")
-        .eq("teacher_id", profile.id)
-        .order("name");
+      const { data: subs, error: subErr } = await withTimeout(
+        supabase
+          .from("subjects")
+          .select("id, name, code")
+          .eq("teacher_id", profile.id)
+          .order("name"),
+        1500
+      );
 
       if (subErr || !subs || subs.length === 0) {
+        if (!hasCache) {
+          const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
+          setSubjects(DEMO_TEACHER_SUBJECTS);
+          setRecords([...todayAttendance, ...recentAttendance] as unknown as AttendanceWithRelations[]);
+        }
+      } else {
+        setSubjects(subs);
+        setLocalCache("teacher_reports_subjects", subs);
+        const subjectIds = subs.map((s) => s.id);
+        const { data: att } = await withTimeout(
+          supabase
+            .from("attendance")
+            .select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))")
+            .in("subject_id", subjectIds)
+            .order("date", { ascending: false })
+            .limit(1000),
+          1500
+        );
+        const fetchedRecords = (att || []) as unknown as AttendanceWithRelations[];
+        setRecords(fetchedRecords);
+        setLocalCache("teacher_reports_records", fetchedRecords);
+      }
+    } catch {
+      if (!hasCache) {
         const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
         setSubjects(DEMO_TEACHER_SUBJECTS);
         setRecords([...todayAttendance, ...recentAttendance] as unknown as AttendanceWithRelations[]);
-      } else {
-        setSubjects(subs);
-        const subjectIds = subs.map((s) => s.id);
-        const { data: att } = await supabase
-          .from("attendance")
-          .select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))")
-          .in("subject_id", subjectIds)
-          .order("date", { ascending: false })
-          .limit(1000);
-        setRecords((att || []) as unknown as AttendanceWithRelations[]);
       }
-    } catch {
-      const { todayAttendance, recentAttendance } = getDemoTeacherAttendance();
-      setSubjects(DEMO_TEACHER_SUBJECTS);
-      setRecords([...todayAttendance, ...recentAttendance] as unknown as AttendanceWithRelations[]);
     } finally {
       setLoading(false);
     }
