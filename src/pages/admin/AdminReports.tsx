@@ -12,6 +12,7 @@ import { useToast } from "../../components/ui/Toast";
 import { calculateStats, formatDate } from "../../lib/utils";
 import type { Attendance, Subject } from "../../lib/types";
 import { DEMO_TEACHER_SUBJECTS, getDemoAdminData } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 interface AttendanceWithRelations extends Attendance {
   subjects: { name: string; code: string } | null;
@@ -20,10 +21,9 @@ interface AttendanceWithRelations extends Attendance {
 
 export function AdminReports() {
   const { showToast } = useToast();
-  const [records, setRecords] = useState<AttendanceWithRelations[]>([]);
-
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<AttendanceWithRelations[]>(() => getLocalCache("admin_reports_records") || []);
+  const [subjects, setSubjects] = useState<Subject[]>(() => getLocalCache("admin_reports_subjects") || []);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("admin_reports_records"));
   const [filters, setFilters] = useState({
     subject_id: "",
     month: "",
@@ -34,25 +34,38 @@ export function AdminReports() {
   }, []);
 
   async function loadData() {
-    setLoading(true);
+    const hasCache = getLocalCache("admin_reports_records") !== null;
+    if (!hasCache) setLoading(true);
+
     try {
-      const [attRes, subRes] = await Promise.all([
-        supabase.from("attendance").select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))").order("date", { ascending: false }).limit(1000),
-        supabase.from("subjects").select("id, name, code").order("name"),
-      ]);
+      const [attRes, subRes] = await withTimeout(
+        Promise.all([
+          supabase.from("attendance").select("id, student_id, subject_id, date, status, created_at, subjects(name, code), students(roll_number, profiles(name))").order("date", { ascending: false }).limit(1000),
+          supabase.from("subjects").select("id, name, code").order("name"),
+        ]),
+        1500
+      );
 
       if (attRes.error || !attRes.data || attRes.data.length === 0) {
+        if (!hasCache) {
+          const demo = getDemoAdminData();
+          setRecords(demo.logs as unknown as AttendanceWithRelations[]);
+          setSubjects(DEMO_TEACHER_SUBJECTS as unknown as Subject[]);
+        }
+      } else {
+        const fetchedRecords = attRes.data as unknown as AttendanceWithRelations[];
+        const fetchedSubjects = (subRes.data || DEMO_TEACHER_SUBJECTS) as unknown as Subject[];
+        setRecords(fetchedRecords);
+        setSubjects(fetchedSubjects);
+        setLocalCache("admin_reports_records", fetchedRecords);
+        setLocalCache("admin_reports_subjects", fetchedSubjects);
+      }
+    } catch {
+      if (!hasCache) {
         const demo = getDemoAdminData();
         setRecords(demo.logs as unknown as AttendanceWithRelations[]);
         setSubjects(DEMO_TEACHER_SUBJECTS as unknown as Subject[]);
-      } else {
-        setRecords(attRes.data as unknown as AttendanceWithRelations[]);
-        setSubjects((subRes.data || DEMO_TEACHER_SUBJECTS) as unknown as Subject[]);
       }
-    } catch {
-      const demo = getDemoAdminData();
-      setRecords(demo.logs as unknown as AttendanceWithRelations[]);
-      setSubjects(DEMO_TEACHER_SUBJECTS as unknown as Subject[]);
     } finally {
       setLoading(false);
     }
