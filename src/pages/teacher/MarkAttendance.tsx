@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { formatDateInput } from "../../lib/utils";
 import type { Subject, Student } from "../../lib/types";
 import { DEMO_TEACHER_SUBJECTS, DEMO_STUDENTS } from "../../lib/demoData";
+import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 interface StudentWithProfile extends Student {
   profiles: { name: string } | null;
@@ -18,14 +19,17 @@ interface StudentWithProfile extends Student {
 export function MarkAttendance() {
   const { showToast } = useToast();
   const { profile } = useAuth();
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [selectedSubject, setSelectedSubject] = useState("");
+  const [subjects, setSubjects] = useState<Subject[]>(() => getLocalCache("teacher_mark_subjects") || []);
+  const [selectedSubject, setSelectedSubject] = useState<string>(() => {
+    const cachedSubs = getLocalCache<Subject[]>("teacher_mark_subjects");
+    return cachedSubs && cachedSubs.length > 0 ? cachedSubs[0].id : "";
+  });
   const [date, setDate] = useState(formatDateInput(new Date()));
-  const [students, setStudents] = useState<StudentWithProfile[]>([]);
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent">>({});
+  const [students, setStudents] = useState<StudentWithProfile[]>(() => getLocalCache("teacher_mark_students") || []);
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent">>(() => getLocalCache("teacher_mark_att_map") || {});
   const [existingAttendance, setExistingAttendance] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => !getLocalCache("teacher_mark_subjects"));
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -34,35 +38,45 @@ export function MarkAttendance() {
 
   async function loadSubjects() {
     if (!profile) return;
-    setLoading(true);
+    const hasCache = getLocalCache("teacher_mark_subjects") !== null;
+    if (!hasCache) setLoading(true);
 
     if (profile.id.startsWith("demo-")) {
       const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
       setSubjects(demoSubs);
-      if (demoSubs.length > 0) setSelectedSubject(demoSubs[0].id);
+      if (demoSubs.length > 0 && !selectedSubject) setSelectedSubject(demoSubs[0].id);
       setLoading(false);
       return;
     }
 
     try {
-      const { data, error } = await supabase
-        .from("subjects")
-        .select("id, name, code, semester, department_id")
-        .eq("teacher_id", profile.id)
-        .order("name");
+      const { data, error } = await withTimeout(
+        supabase
+          .from("subjects")
+          .select("id, name, code, semester, department_id")
+          .eq("teacher_id", profile.id)
+          .order("name"),
+        1000
+      );
 
       if (error || !data || data.length === 0) {
-        const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
-        setSubjects(demoSubs);
-        if (demoSubs.length > 0) setSelectedSubject(demoSubs[0].id);
+        if (!hasCache) {
+          const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
+          setSubjects(demoSubs);
+          if (demoSubs.length > 0 && !selectedSubject) setSelectedSubject(demoSubs[0].id);
+        }
       } else {
-        setSubjects(data as unknown as Subject[]);
-        setSelectedSubject(data[0].id);
+        const fetchedSubs = data as unknown as Subject[];
+        setSubjects(fetchedSubs);
+        setLocalCache("teacher_mark_subjects", fetchedSubs);
+        if (!selectedSubject && fetchedSubs.length > 0) setSelectedSubject(fetchedSubs[0].id);
       }
     } catch {
-      const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
-      setSubjects(demoSubs);
-      if (demoSubs.length > 0) setSelectedSubject(demoSubs[0].id);
+      if (!hasCache) {
+        const demoSubs = DEMO_TEACHER_SUBJECTS as unknown as Subject[];
+        setSubjects(demoSubs);
+        if (demoSubs.length > 0 && !selectedSubject) setSelectedSubject(demoSubs[0].id);
+      }
     } finally {
       setLoading(false);
     }
@@ -75,7 +89,8 @@ export function MarkAttendance() {
   }, [selectedSubject, date]);
 
   async function loadStudents() {
-    setLoading(true);
+    const hasCache = getLocalCache("teacher_mark_students") !== null;
+    if (!hasCache) setLoading(true);
 
     if (profile?.id?.startsWith("demo-") || selectedSubject.startsWith("demo-")) {
       const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
@@ -97,24 +112,30 @@ export function MarkAttendance() {
       if (subject?.department_id) query = query.eq("department_id", subject.department_id);
       if (subject?.semester) query = query.eq("semester", subject.semester);
 
-      const [studentsRes, existingRes] = await Promise.all([
-        query,
-        supabase
-          .from("attendance")
-          .select("id, student_id, status")
-          .eq("subject_id", selectedSubject)
-          .eq("date", date),
-      ]);
+      const [studentsRes, existingRes] = await withTimeout(
+        Promise.all([
+          query,
+          supabase
+            .from("attendance")
+            .select("id, student_id, status")
+            .eq("subject_id", selectedSubject)
+            .eq("date", date),
+        ]),
+        1000
+      );
 
       const stus = (studentsRes.data || []) as unknown as StudentWithProfile[];
       if (stus.length === 0) {
-        const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
-        setStudents(demoStus);
-        const defaultMap: Record<string, "present" | "absent"> = {};
-        demoStus.forEach((s) => { defaultMap[s.id] = "present"; });
-        setAttendanceMap(defaultMap);
+        if (!hasCache) {
+          const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
+          setStudents(demoStus);
+          const defaultMap: Record<string, "present" | "absent"> = {};
+          demoStus.forEach((s) => { defaultMap[s.id] = "present"; });
+          setAttendanceMap(defaultMap);
+        }
       } else {
         setStudents(stus);
+        setLocalCache("teacher_mark_students", stus);
         const existingMap: Record<string, string> = {};
         const attMap: Record<string, "present" | "absent"> = {};
         (existingRes.data || []).forEach((a) => {
@@ -128,13 +149,16 @@ export function MarkAttendance() {
           defaultMap[s.id] = attMap[s.id] || "present";
         });
         setAttendanceMap(defaultMap);
+        setLocalCache("teacher_mark_att_map", defaultMap);
       }
     } catch {
-      const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
-      setStudents(demoStus);
-      const defaultMap: Record<string, "present" | "absent"> = {};
-      demoStus.forEach((s) => { defaultMap[s.id] = "present"; });
-      setAttendanceMap(defaultMap);
+      if (!hasCache) {
+        const demoStus = DEMO_STUDENTS as unknown as StudentWithProfile[];
+        setStudents(demoStus);
+        const defaultMap: Record<string, "present" | "absent"> = {};
+        demoStus.forEach((s) => { defaultMap[s.id] = "present"; });
+        setAttendanceMap(defaultMap);
+      }
     } finally {
       setLoading(false);
     }
