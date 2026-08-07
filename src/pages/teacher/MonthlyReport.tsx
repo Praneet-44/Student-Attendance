@@ -461,16 +461,21 @@ export function MonthlyReport() {
             <FileUp size={16} /> Import Excel Report
           </Button>
 
-          {/* Edit Mode Toggle */}
-          {isEditing ? (
-            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={saveManualEdits}>
-              <Save size={16} /> Save Changes
+          {/* Edit / Add More Button */}
+          {!isEditing ? (
+            <Button variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" onClick={() => setIsEditing(true)}>
+              <Edit3 size={16} /> Edit / Add More
             </Button>
           ) : (
-            <Button variant="outline" onClick={() => setIsEditing(true)}>
-              <Edit3 size={16} /> Edit / Enter Details
+            <Button variant="outline" size="sm" onClick={addNewStudentRow}>
+              <Plus size={16} /> Add More Student
             </Button>
           )}
+
+          {/* Save Data Button */}
+          <Button className="bg-emerald-600 hover:bg-emerald-700 font-semibold" onClick={saveManualEdits}>
+            <Save size={16} /> Save Data
+          </Button>
 
           {/* Download Buttons */}
           <Button variant="outline" onClick={exportExcel} disabled={rows.length === 0}>
@@ -566,11 +571,19 @@ export function MonthlyReport() {
           </div>
 
           <div className="flex items-center gap-2">
-            {isEditing && (
-              <Button size="sm" onClick={addNewStudentRow}>
+            {!isEditing ? (
+              <Button size="sm" variant="outline" onClick={() => setIsEditing(true)}>
+                <Edit3 size={14} /> Edit / Add More
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={addNewStudentRow}>
                 <Plus size={14} /> Add Student
               </Button>
             )}
+
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={saveManualEdits}>
+              <Save size={14} /> Save Data
+            </Button>
           </div>
         </div>
 
