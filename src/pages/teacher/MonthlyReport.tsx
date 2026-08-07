@@ -607,14 +607,14 @@ export function MonthlyReport() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-900 text-white">
-                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Sl.No</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Roll No</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Name of the Student</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Present (Days)</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Absent (Days)</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Working Days</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">%</th>
-                  {isEditing && <th className="px-3 py-3 text-center text-xs font-semibold uppercase">Action</th>}
+                  <th className="px-2.5 py-3 text-center text-xs font-semibold uppercase w-12">Sl.No</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold uppercase whitespace-nowrap">Roll No</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold uppercase min-w-[180px]">Name of the Student</th>
+                  <th className="px-2.5 py-3 text-center text-xs font-semibold uppercase whitespace-nowrap">Present (Days)</th>
+                  <th className="px-2.5 py-3 text-center text-xs font-semibold uppercase whitespace-nowrap">Absent (Days)</th>
+                  <th className="px-2.5 py-3 text-center text-xs font-semibold uppercase whitespace-nowrap">Working Days</th>
+                  <th className="px-2.5 py-3 text-center text-xs font-semibold uppercase whitespace-nowrap">%</th>
+                  {isEditing && <th className="px-2.5 py-3 text-center text-xs font-semibold uppercase">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -634,10 +634,10 @@ export function MonthlyReport() {
                           : "bg-slate-50/50 hover:bg-slate-100"
                       }`}
                     >
-                      <td className="px-4 py-3 text-center text-slate-500">{index + 1}</td>
+                      <td className="px-2.5 py-2.5 text-center text-slate-500">{index + 1}</td>
 
                       {/* Roll No */}
-                      <td className="px-4 py-3 font-mono text-slate-700 font-medium">
+                      <td className="px-3 py-2.5 font-mono text-slate-700 font-medium whitespace-nowrap">
                         {isEditing ? (
                           <input
                             type="text"
@@ -647,7 +647,7 @@ export function MonthlyReport() {
                               updated[index].roll_number = e.target.value;
                               setRows(updated);
                             }}
-                            className="w-32 px-2 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
+                            className="w-28 px-2 py-1 border border-slate-300 rounded text-xs focus:ring-2 focus:ring-blue-500"
                           />
                         ) : (
                           row.roll_number
@@ -655,7 +655,7 @@ export function MonthlyReport() {
                       </td>
 
                       {/* Name of Student */}
-                      <td className="px-4 py-3 font-medium text-slate-900">
+                      <td className="px-3 py-2.5 font-medium text-slate-900">
                         {isEditing ? (
                           <input
                             type="text"
@@ -673,7 +673,7 @@ export function MonthlyReport() {
                       </td>
 
                       {/* Present (Days) */}
-                      <td className="px-4 py-3 text-center text-emerald-700 font-semibold">
+                      <td className="px-2.5 py-2.5 text-center text-emerald-700 font-semibold whitespace-nowrap">
                         {isEditing ? (
                           <input
                             type="number"
@@ -688,7 +688,7 @@ export function MonthlyReport() {
                               updated[index].percentage = Math.round((p / workingDays) * 100 * 100) / 100;
                               setRows(updated);
                             }}
-                            className="w-20 px-2 py-1 border border-slate-300 rounded text-xs text-center font-bold text-emerald-700 focus:ring-2 focus:ring-blue-500"
+                            className="w-16 px-1.5 py-1 border border-slate-300 rounded text-xs text-center font-bold text-emerald-700 focus:ring-2 focus:ring-blue-500"
                           />
                         ) : (
                           row.present
@@ -696,17 +696,17 @@ export function MonthlyReport() {
                       </td>
 
                       {/* Absent (Days) */}
-                      <td className="px-4 py-3 text-center text-rose-600 font-semibold">
+                      <td className="px-2.5 py-2.5 text-center text-rose-600 font-semibold whitespace-nowrap">
                         {isEditing ? calcAbsent : row.absent}
                       </td>
 
                       {/* Working Days */}
-                      <td className="px-4 py-3 text-center text-slate-600">
+                      <td className="px-2.5 py-2.5 text-center text-slate-600 font-medium whitespace-nowrap">
                         {workingDays}
                       </td>
 
                       {/* Percentage */}
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                         <Badge variant={calcPct >= 75 ? "success" : "danger"}>
                           {calcPct}%
                         </Badge>
@@ -714,7 +714,7 @@ export function MonthlyReport() {
 
                       {/* Delete Action when editing */}
                       {isEditing && (
-                        <td className="px-3 py-3 text-center">
+                        <td className="px-2 py-2.5 text-center">
                           <button
                             onClick={() => deleteStudentRow(index)}
                             className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50"
@@ -731,17 +731,17 @@ export function MonthlyReport() {
               {/* Table Footer */}
               <tfoot>
                 <tr className="bg-slate-100 border-t-2 border-slate-300">
-                  <td colSpan={3} className="px-4 py-3 text-xs font-bold text-slate-700 text-right">
+                  <td colSpan={3} className="px-3 py-2.5 text-xs font-bold text-slate-700 text-right">
                     Class Average →
                   </td>
-                  <td className="px-4 py-3 text-center text-xs font-bold text-emerald-700">
+                  <td className="px-2.5 py-2.5 text-center text-xs font-bold text-emerald-700">
                     {rows.length > 0 ? Math.round(rows.reduce((a, r) => a + r.present, 0) / rows.length * 10) / 10 : 0}
                   </td>
-                  <td className="px-4 py-3 text-center text-xs font-bold text-rose-600">
+                  <td className="px-2.5 py-2.5 text-center text-xs font-bold text-rose-600">
                     {rows.length > 0 ? Math.round(rows.reduce((a, r) => a + r.absent, 0) / rows.length * 10) / 10 : 0}
                   </td>
-                  <td className="px-4 py-3 text-center text-xs font-bold text-slate-600">{workingDays}</td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-2.5 py-2.5 text-center text-xs font-bold text-slate-600">{workingDays}</td>
+                  <td className="px-2.5 py-2.5 text-center">
                     <Badge variant={presentAvg >= 75 ? "success" : "danger"}>{presentAvg}%</Badge>
                   </td>
                   {isEditing && <td />}
