@@ -14,8 +14,8 @@ import { getLocalCache, setLocalCache, withTimeout } from "../../lib/cache";
 
 export function AdminDashboard() {
   const { profile } = useAuth();
-  const [stats, setStats] = useState(() => getLocalCache("admin_stats") || { students: 0, teachers: 0, subjects: 0, departments: 0 });
-  const [attendanceStats, setAttendanceStats] = useState(() => getLocalCache("admin_att_stats") || { total: 0, present: 0, absent: 0, percentage: 0 });
+  const [stats, setStats] = useState<{ students: number; teachers: number; subjects: number; departments: number }>(() => getLocalCache("admin_stats") || { students: 0, teachers: 0, subjects: 0, departments: 0 });
+  const [attendanceStats, setAttendanceStats] = useState<{ total: number; present: number; absent: number; percentage: number }>(() => getLocalCache("admin_att_stats") || { total: 0, present: 0, absent: 0, percentage: 0 });
   const [monthlyData, setMonthlyData] = useState<{ month: string; percentage: number }[]>(() => getLocalCache("admin_monthly") || []);
   const [recentActivity, setRecentActivity] = useState<Attendance[]>(() => getLocalCache("admin_logs") || []);
   const [loading, setLoading] = useState<boolean>(() => !getLocalCache("admin_stats"));

@@ -79,7 +79,7 @@ export function StudentReports() {
         });
         setSubjects(Array.from(subjMap.values()));
       } else {
-        setStudentInfo(studentRes.data as StudentWithRelations);
+        setStudentInfo(studentRes.data as unknown as StudentWithRelations);
         const atts = (attRes.data || []) as unknown as AttendanceWithSubject[];
         setRecords(atts);
         const subjMap = new Map<string, { id: string; name: string; code: string }>();

@@ -74,7 +74,7 @@ export function StudentDashboard() {
           setRecords(demoRecords as unknown as AttendanceWithSubject[]);
         }
       } else {
-        const fetchedInfo = studentRes.data as StudentWithRelations;
+        const fetchedInfo = studentRes.data as unknown as StudentWithRelations;
         const fetchedRecords = (attRes.data || []) as unknown as AttendanceWithSubject[];
         setStudentInfo(fetchedInfo);
         setRecords(fetchedRecords);

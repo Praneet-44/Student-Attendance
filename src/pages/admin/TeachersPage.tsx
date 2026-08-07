@@ -13,9 +13,9 @@ import { DEMO_DEPARTMENTS } from "../../lib/demoData";
 import { getLocalCache, setLocalCache, withTimeout, fetchWithTimeout } from "../../lib/cache";
 
 const DEMO_TEACHERS: UserWithInfo[] = [
-  { id: "demo-t-1", name: "Dr. Robert Vance", email: "robert@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { id: "demo-t-1", department_id: "demo-dept-1", created_at: new Date().toISOString() } },
-  { id: "demo-t-2", name: "Prof. Sarah Connor", email: "sarah@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { id: "demo-t-2", department_id: "demo-dept-1", created_at: new Date().toISOString() } },
-  { id: "demo-t-3", name: "Dr. Alan Turing", email: "alan@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { id: "demo-t-3", department_id: "demo-dept-2", created_at: new Date().toISOString() } },
+  { id: "demo-t-1", name: "Dr. Robert Vance", email: "robert@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { department_id: "demo-dept-1" } },
+  { id: "demo-t-2", name: "Prof. Sarah Connor", email: "sarah@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { department_id: "demo-dept-1" } },
+  { id: "demo-t-3", name: "Dr. Alan Turing", email: "alan@university.edu", role: "teacher", created_at: new Date().toISOString(), teacher_info: { department_id: "demo-dept-2" } },
 ];
 
 export function TeachersPage() {
