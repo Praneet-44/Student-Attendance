@@ -79,12 +79,12 @@ export interface UserWithInfo {
   email?: string;
   role: UserRole;
   created_at: string;
-  student_info: {
+  student_info?: {
     roll_number: string;
     department_id: string | null;
     semester: number;
   } | null;
-  teacher_info: {
+  teacher_info?: {
     department_id: string | null;
   } | null;
 }

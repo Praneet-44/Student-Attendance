@@ -114,6 +114,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       created_at: new Date().toISOString(),
     };
 
+    // Auto-create missing profile row in Supabase if user is logged in
+    try {
+      await supabase.from("profiles").upsert({
+        id: userId,
+        name: metaName,
+        role: metaRole,
+      });
+    } catch {
+      // Ignore if RLS or network prevents write
+    }
+
     setProfile(fallbackProfile);
     setLoading(false);
   }
@@ -185,20 +196,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signIn(email: string, password: string) {
-    // Check for demo accounts or network issues
-    if (email === "admin@sams.dev") {
-      createDemoAuth("admin@sams.dev", "System Admin", "admin");
-      return { error: null };
-    }
-    if (email === "teacher@sams.dev") {
-      createDemoAuth("teacher@sams.dev", "Sample Teacher", "teacher");
-      return { error: null };
-    }
-    if (email === "student@sams.dev") {
-      createDemoAuth("student@sams.dev", "Sample Student", "student");
-      return { error: null };
-    }
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -206,9 +203,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        // Handle network / DNS unreachable error by falling back to demo login if requested
-        if (error.message.includes("fetch") || error.message.includes("network") || error.message.includes("Failed") || error.message.includes("invalid")) {
-          // If demo email or fallback requested
+        // Handle network / fetch failure by falling back to demo mode if offline
+        if (error.message.includes("fetch") || error.message.includes("network") || error.message.includes("Failed")) {
           const role: UserRole = email.includes("admin") ? "admin" : email.includes("teacher") ? "teacher" : "student";
           createDemoAuth(email, email.split("@")[0], role);
           return { error: null };
