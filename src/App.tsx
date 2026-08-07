@@ -14,11 +14,13 @@ import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
 import { MarkAttendance } from "./pages/teacher/MarkAttendance";
 import { ExcelUpload } from "./pages/teacher/ExcelUpload";
 import { ImageUpload } from "./pages/teacher/ImageUpload";
+import { MonthlyReport } from "./pages/teacher/MonthlyReport";
 import { TeacherReports } from "./pages/teacher/TeacherReports";
 import { StudentDashboard } from "./pages/student/StudentDashboard";
 import { StudentAttendance } from "./pages/student/StudentAttendance";
 import { StudentCalendar } from "./pages/student/StudentCalendar";
 import { StudentReports } from "./pages/student/StudentReports";
+import { StudentMonthlyReport } from "./pages/student/StudentMonthlyReport";
 
 function AppContent() {
   const { session, profile, loading } = useAuth();
@@ -60,6 +62,7 @@ function AppContent() {
         case "mark": return <MarkAttendance />;
         case "upload": return <ExcelUpload />;
         case "image-upload": return <ImageUpload />;
+        case "monthly-report": return <MonthlyReport />;
         case "reports": return <TeacherReports />;
         default: return <TeacherDashboard onNavigate={setActivePage} />;
       }
@@ -70,6 +73,7 @@ function AppContent() {
         case "dashboard": return <StudentDashboard />;
         case "attendance": return <StudentAttendance />;
         case "calendar": return <StudentCalendar />;
+        case "monthly-report": return <StudentMonthlyReport />;
         case "reports": return <StudentReports />;
         default: return <StudentDashboard />;
       }

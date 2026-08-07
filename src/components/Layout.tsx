@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import {
   GraduationCap, LayoutDashboard, Users, Building2,
   ClipboardCheck, FileBarChart, LogOut, Menu, X, Shield,
-  CalendarDays, Upload, History, UserCog, FileUp, ImageIcon,
+  CalendarDays, Upload, History, UserCog, FileUp, ImageIcon, CalendarCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import type { UserRole } from "../lib/types";
@@ -28,12 +28,14 @@ const navByRole: Record<UserRole, NavItem[]> = {
     { key: "mark", label: "Mark Attendance", icon: <ClipboardCheck size={20} /> },
     { key: "upload", label: "Excel Upload", icon: <Upload size={20} /> },
     { key: "image-upload", label: "Image Upload", icon: <ImageIcon size={20} /> },
+    { key: "monthly-report", label: "Monthly Report", icon: <CalendarCheck size={20} /> },
     { key: "reports", label: "Reports", icon: <FileBarChart size={20} /> },
   ],
   student: [
     { key: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={20} /> },
     { key: "attendance", label: "My Attendance", icon: <ClipboardCheck size={20} /> },
     { key: "calendar", label: "Calendar", icon: <CalendarDays size={20} /> },
+    { key: "monthly-report", label: "Monthly Report", icon: <CalendarCheck size={20} /> },
     { key: "reports", label: "Download Reports", icon: <FileBarChart size={20} /> },
   ],
 };

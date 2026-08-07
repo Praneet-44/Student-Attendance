@@ -12,6 +12,7 @@ import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
 import { formatDateInput } from "../../lib/utils";
 import type { Subject, Student } from "../../lib/types";
+import { DEMO_TEACHER_SUBJECTS, DEMO_STUDENTS } from "../../lib/demoData";
 
 interface StudentWithProfile extends Student {
   profiles: { name: string } | null;
@@ -40,6 +41,8 @@ export function ImageUpload() {
   const [step, setStep] = useState<1 | 2>(1);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const isDemo = profile?.id?.startsWith("demo-");
+
   useEffect(() => {
     loadSubjects();
   }, []);
@@ -64,6 +67,14 @@ export function ImageUpload() {
 
   async function loadSubjects() {
     if (!profile) return;
+
+    // Demo mode fallback
+    if (isDemo) {
+      setSubjects(DEMO_TEACHER_SUBJECTS as unknown as Subject[]);
+      setSelectedSubject(DEMO_TEACHER_SUBJECTS[0].id);
+      return;
+    }
+
     const { data } = await supabase
       .from("subjects")
       .select("id, name, code, semester, department_id")
@@ -74,6 +85,18 @@ export function ImageUpload() {
   }
 
   async function loadStudents() {
+    // Demo mode fallback — filter DEMO_STUDENTS by the selected subject's dept/semester
+    if (isDemo) {
+      const subject = DEMO_TEACHER_SUBJECTS.find((s) => s.id === selectedSubject);
+      const filtered = DEMO_STUDENTS.filter(
+        (s) =>
+          (!subject?.department_id || s.department_id === subject.department_id) &&
+          (!subject?.semester || s.semester === subject.semester)
+      );
+      setStudents(filtered as unknown as StudentWithProfile[]);
+      return;
+    }
+
     const subject = subjects.find((s) => s.id === selectedSubject);
     let query = supabase
       .from("students")
@@ -127,6 +150,16 @@ export function ImageUpload() {
     if (!selectedSubject || rows.length === 0 || !date) return;
     setImporting(true);
     setImportResults(null);
+
+    // Demo mode — simulate a successful save
+    if (isDemo) {
+      await new Promise((r) => setTimeout(r, 800));
+      const present = rows.filter((r) => r.status === "present").length;
+      setImportResults({ success: rows.length, duplicates: 0, errors: 0 });
+      showToast("success", `${present} present, ${rows.filter((r) => r.status === "absent").length} absent saved (demo)`);
+      setImporting(false);
+      return;
+    }
 
     // Check existing attendance for that date
     const studentIds = rows.map((r) => r.student_id);
