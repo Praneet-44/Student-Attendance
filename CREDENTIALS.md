@@ -44,9 +44,9 @@
 
 | Field       | Value                                                                 |
 |-------------|-----------------------------------------------------------------------|
-| Project URL | https://uynzwrwtblpyywmtrfoi.supabase.co                             |
-| Dashboard   | https://supabase.com/dashboard/project/uynzwrwtblpyywmtrfoi          |
-| Auth Users  | https://supabase.com/dashboard/project/uynzwrwtblpyywmtrfoi/auth/users |
+| Project URL | https://xicshjcbactxjisaorwk.supabase.co                             |
+| Dashboard   | https://supabase.com/dashboard/project/xicshjcbactxjisaorwk          |
+| Auth Users  | https://supabase.com/dashboard/project/xicshjcbactxjisaorwk/auth/users |
 
 ---
 
