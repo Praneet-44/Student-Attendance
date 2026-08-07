@@ -10,6 +10,7 @@ import { Select } from "../../components/ui/Input";
 import { Badge } from "../../components/ui/Badge";
 import { useToast } from "../../components/ui/Toast";
 import { useAuth } from "../../context/AuthContext";
+import { DEMO_STUDENTS } from "../../lib/demoData";
 
 interface StudentMonthlyRow {
   sl_no: number;
@@ -25,8 +26,6 @@ export function MonthlyReport() {
   const { showToast } = useToast();
   const { profile } = useAuth();
 
-  const [subjects, setSubjects] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -34,9 +33,10 @@ export function MonthlyReport() {
   const [rows, setRows] = useState<StudentMonthlyRow[]>([]);
   const [workingDays, setWorkingDays] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [departmentInfo, setDepartmentInfo] = useState<{ name: string; code: string } | null>(null);
 
-  // Generate past 12 months
+  const isDemo = profile?.id?.startsWith("demo-");
+
+  // Past 12 months selector options
   const monthOptions = (() => {
     const options: { value: string; label: string }[] = [];
     const now = new Date();
@@ -52,59 +52,50 @@ export function MonthlyReport() {
   const monthLabel = monthOptions.find((m) => m.value === selectedMonth)?.label || selectedMonth;
 
   useEffect(() => {
-    loadSubjects();
-  }, []);
-
-  useEffect(() => {
-    if (selectedSubject && selectedMonth) loadReport();
-  }, [selectedSubject, selectedMonth]);
-
-  async function loadSubjects() {
-    if (!profile) return;
-    const { data } = await supabase
-      .from("subjects")
-      .select("id, name, code, department_id, departments(name, code)")
-      .eq("teacher_id", profile.id)
-      .order("name");
-
-    if (data && data.length > 0) {
-      setSubjects(data.map((s) => ({ id: s.id, name: s.name, code: s.code })));
-      setSelectedSubject(data[0].id);
-      // Save department info for first subject
-      const dept = (data[0] as any).departments;
-      if (dept) setDepartmentInfo(dept);
-    }
-  }
+    if (selectedMonth) loadReport();
+  }, [selectedMonth]);
 
   async function loadReport() {
-    if (!selectedSubject || !selectedMonth) return;
+    if (!selectedMonth) return;
     setLoading(true);
     setRows([]);
 
     try {
-      // Get start and end date of the month
       const [year, month] = selectedMonth.split("-").map(Number);
       const startDate = `${selectedMonth}-01`;
       const lastDay = new Date(year, month, 0).getDate();
       const endDate = `${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
 
-      // Fetch subject info for department
-      const { data: subData } = await supabase
-        .from("subjects")
-        .select("id, name, code, department_id, departments(name, code)")
-        .eq("id", selectedSubject)
-        .maybeSingle();
+      // Demo Mode Fallback
+      if (isDemo) {
+        const total = 25; // 25 working days like college format
+        setWorkingDays(total);
 
-      if (subData) {
-        const dept = (subData as any).departments;
-        if (dept) setDepartmentInfo(dept);
+        // Deterministic mock calculations for demo students
+        const demoResult: StudentMonthlyRow[] = DEMO_STUDENTS.map((stu, idx) => {
+          const p = Math.max(12, Math.min(25, 25 - (idx * 3 % 11)));
+          const a = total - p;
+          const pct = Math.round((p / total) * 100 * 100) / 100;
+          return {
+            sl_no: idx + 1,
+            roll_number: stu.roll_number,
+            name: stu.profiles.name,
+            present: p,
+            absent: a,
+            total,
+            percentage: pct,
+          };
+        }).sort((a, b) => a.roll_number.localeCompare(b.roll_number));
+
+        setRows(demoResult);
+        setLoading(false);
+        return;
       }
 
-      // Fetch all attendance for subject in month
+      // Live Supabase Fetch across all students and attendance in month
       const { data: att, error } = await supabase
         .from("attendance")
         .select("student_id, date, status, students(roll_number, profiles(name))")
-        .eq("subject_id", selectedSubject)
         .gte("date", startDate)
         .lte("date", endDate);
 
@@ -114,7 +105,13 @@ export function MonthlyReport() {
         return;
       }
 
-      if (!att || att.length === 0) {
+      // Also fetch all registered students to make sure even students with 0 attendance appear
+      const { data: allStudents } = await supabase
+        .from("students")
+        .select("id, roll_number, profiles(name)")
+        .order("roll_number");
+
+      if ((!att || att.length === 0) && (!allStudents || allStudents.length === 0)) {
         showToast("info", "No attendance records found for this month.");
         setRows([]);
         setWorkingDays(0);
@@ -122,32 +119,44 @@ export function MonthlyReport() {
         return;
       }
 
-      // Count unique working days
-      const uniqueDates = new Set(att.map((a) => a.date));
+      const uniqueDates = new Set((att || []).map((a) => a.date));
+      const total = uniqueDates.size || 1;
       setWorkingDays(uniqueDates.size);
 
-      // Aggregate per student
+      // Student aggregation map
       const studentMap = new Map<
         string,
         { roll_number: string; name: string; present: number; absent: number }
       >();
 
-      for (const record of att) {
+      // Initialize all students
+      (allStudents || []).forEach((stu) => {
+        studentMap.set(stu.id, {
+          roll_number: stu.roll_number || "—",
+          name: (stu as any).profiles?.name || "—",
+          present: 0,
+          absent: 0,
+        });
+      });
+
+      // Populate attendance records
+      (att || []).forEach((record) => {
         const sid = record.student_id;
         const stu = (record as any).students;
-        const rollNo = stu?.roll_number || "—";
-        const name = stu?.profiles?.name || "—";
-
         if (!studentMap.has(sid)) {
-          studentMap.set(sid, { roll_number: rollNo, name, present: 0, absent: 0 });
+          studentMap.set(sid, {
+            roll_number: stu?.roll_number || "—",
+            name: stu?.profiles?.name || "—",
+            present: 0,
+            absent: 0,
+          });
         }
         const entry = studentMap.get(sid)!;
         if (record.status === "present") entry.present++;
         else entry.absent++;
-      }
+      });
 
-      // Build rows sorted by roll number
-      const total = uniqueDates.size;
+      // Build rows
       const result: StudentMonthlyRow[] = Array.from(studentMap.values())
         .sort((a, b) => a.roll_number.localeCompare(b.roll_number))
         .map((s, i) => ({
@@ -155,21 +164,18 @@ export function MonthlyReport() {
           roll_number: s.roll_number,
           name: s.name,
           present: s.present,
-          absent: total - s.present,
+          absent: uniqueDates.size > 0 ? total - s.present : 0,
           total,
           percentage: total > 0 ? Math.round((s.present / total) * 100 * 100) / 100 : 0,
         }));
 
       setRows(result);
-    } catch (err) {
+    } catch {
       showToast("error", "Unexpected error loading report.");
     } finally {
       setLoading(false);
     }
   }
-
-  const subjectName = subjects.find((s) => s.id === selectedSubject)?.name || "";
-  const subjectCode = subjects.find((s) => s.id === selectedSubject)?.code || "";
 
   function exportExcel() {
     if (rows.length === 0) { showToast("error", "No data to export"); return; }
@@ -179,24 +185,22 @@ export function MonthlyReport() {
       "Name of the Student": r.name,
       "Present (Days)": r.present,
       "Absent (Days)": r.absent,
-      "Total Working Days": r.total,
-      "Attendance %": r.percentage,
+      "Working Days": r.total,
+      "%": `${r.percentage}%`,
     }));
+
     const ws = XLSX.utils.json_to_sheet(data);
 
-    // Header info rows
     XLSX.utils.sheet_add_aoa(ws, [
-      [`MONTHLY ATTENDANCE - ${monthLabel.toUpperCase()}`],
-      [`Subject: ${subjectName} (${subjectCode})`],
-      [`Department: ${departmentInfo?.name || ""}`],
-      [`Working Days: ${workingDays}`],
+      [`MONTHLY ATTENDANCE REPORT FOR THE MONTH OF ${monthLabel.toUpperCase()}`],
+      [`No. of Working Days: ${workingDays}`],
       [],
     ], { origin: "A1" });
 
-    ws["!cols"] = [{ wch: 6 }, { wch: 15 }, { wch: 30 }, { wch: 14 }, { wch: 13 }, { wch: 18 }, { wch: 14 }];
+    ws["!cols"] = [{ wch: 8 }, { wch: 18 }, { wch: 32 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `${monthLabel} Attendance`);
-    XLSX.writeFile(wb, `monthly_attendance_${selectedMonth}_${subjectCode}.xlsx`);
+    XLSX.writeFile(wb, `monthly_attendance_${selectedMonth}.xlsx`);
     showToast("success", "Excel report downloaded");
   }
 
@@ -209,50 +213,45 @@ export function MonthlyReport() {
     // ── College Header ──
     doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
-    doc.text("MONTHLY ATTENDANCE REPORT", pageW / 2, 15, { align: "center" });
-
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Month: ${monthLabel}`, pageW / 2, 22, { align: "center" });
+    doc.text(`MONTHLY ATTENDANCE FOR THE MONTH OF ${monthLabel.toUpperCase()}`, pageW / 2, 15, { align: "center" });
 
     // Info row
     doc.setFontSize(9);
-    doc.text(`Department: ${departmentInfo?.name || "—"}`, 14, 30);
-    doc.text(`Subject: ${subjectName} (${subjectCode})`, 14, 36);
-    doc.text(`No. of Working Days: ${workingDays}`, 14, 42);
-    doc.text(`Total Students: ${rows.length}`, pageW - 14, 30, { align: "right" });
-    doc.text(`Generated: ${new Date().toLocaleDateString("en-IN")}`, pageW - 14, 36, { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.text(`No. of Working Days : ${workingDays}`, 14, 25);
+    doc.text(`Total Students: ${rows.length}`, pageW - 14, 25, { align: "right" });
 
     const avgPct = rows.length > 0
       ? Math.round(rows.reduce((a, r) => a + r.percentage, 0) / rows.length * 100) / 100
       : 0;
-    doc.text(`Class Avg Attendance: ${avgPct}%`, pageW - 14, 42, { align: "right" });
 
     // ── Table ──
     autoTable(doc, {
-      startY: 48,
-      head: [["Sl.No", "Roll No", "Name of the Student", "Present\n(Days)", "Absent\n(Days)", "%"]],
+      startY: 30,
+      head: [["Sl.No", "Roll No", "Name of the Student", "Present (Days)", "Absent (Days)", "Working Days", "%"]],
       body: rows.map((r) => [
         r.sl_no,
         r.roll_number,
         r.name,
         r.present,
         r.absent,
+        r.total,
         `${r.percentage}%`,
       ]),
-      styles: { fontSize: 8, cellPadding: 2 },
+      styles: { fontSize: 8, cellPadding: 2.5 },
       headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold", halign: "center" },
       columnStyles: {
-        0: { halign: "center", cellWidth: 10 },
+        0: { halign: "center", cellWidth: 12 },
         1: { halign: "center", cellWidth: 28 },
-        2: { cellWidth: 70 },
+        2: { cellWidth: 60 },
         3: { halign: "center", cellWidth: 22 },
         4: { halign: "center", cellWidth: 22 },
-        5: { halign: "center", cellWidth: 20 },
+        5: { halign: "center", cellWidth: 22 },
+        6: { halign: "center", cellWidth: 18 },
       },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       didParseCell(data) {
-        if (data.section === "body" && data.column.index === 5) {
+        if (data.section === "body" && data.column.index === 6) {
           const pct = rows[data.row.index]?.percentage ?? 0;
           if (pct < 75) data.cell.styles.textColor = [220, 38, 38];
           else data.cell.styles.textColor = [5, 150, 105];
@@ -266,11 +265,11 @@ export function MonthlyReport() {
     doc.setFontSize(8);
     doc.setTextColor(100);
     doc.text(
-      `* Students with attendance below 75% are highlighted in red.`,
+      `Class Average Attendance: ${avgPct}% | * Students below 75% are highlighted in red.`,
       14, finalY
     );
 
-    doc.save(`monthly_attendance_${selectedMonth}_${subjectCode}.pdf`);
+    doc.save(`monthly_attendance_${selectedMonth}.pdf`);
     showToast("success", "PDF report downloaded");
   }
 
@@ -286,7 +285,7 @@ export function MonthlyReport() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Monthly Attendance Report</h1>
           <p className="text-slate-500 mt-1">
-            Student-wise consolidated attendance for a selected month
+            Student-wise consolidated monthly attendance report
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -299,21 +298,11 @@ export function MonthlyReport() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Month Selection Filter */}
       <Card className="p-5">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="max-w-xs">
           <Select
-            label="Subject"
-            value={selectedSubject}
-            onChange={(e) => setSelectedSubject(e.target.value)}
-          >
-            <option value="">Select a subject</option>
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-            ))}
-          </Select>
-          <Select
-            label="Month"
+            label="Select Month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
           >
@@ -364,20 +353,11 @@ export function MonthlyReport() {
       <Card>
         {/* Table header info */}
         {rows.length > 0 && (
-          <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 rounded-t-xl">
-            <div className="text-center">
-              <h2 className="text-base font-bold text-slate-900 uppercase tracking-wide">
-                Monthly Attendance for the Month of {monthLabel}
-              </h2>
-              {departmentInfo && (
-                <p className="text-sm text-slate-600 mt-0.5">
-                  Department: <span className="font-semibold">{departmentInfo.name}</span>
-                  &nbsp;|&nbsp;
-                  Subject: <span className="font-semibold">{subjectName} ({subjectCode})</span>
-                </p>
-              )}
-              <p className="text-xs text-slate-500 mt-0.5">No. of Working Days: <strong>{workingDays}</strong></p>
-            </div>
+          <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 rounded-t-xl text-center">
+            <h2 className="text-base font-bold text-slate-900 uppercase tracking-wide">
+              Monthly Attendance for the Month of {monthLabel}
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">No. of Working Days : <strong>{workingDays}</strong></p>
           </div>
         )}
 
@@ -389,20 +369,20 @@ export function MonthlyReport() {
           <div className="flex flex-col items-center justify-center h-48 text-slate-400">
             <CalendarDays size={36} className="mb-3" />
             <p className="font-medium">No attendance data found</p>
-            <p className="text-sm mt-1">Select a subject and month to generate the report</p>
+            <p className="text-sm mt-1">Select a month to generate the report</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-900 text-white">
-                  <th className="px-3 py-3 text-center text-xs font-semibold">Sl.No</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold">Roll No</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold">Name of the Student</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold">Present<br />(Days)</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold">Absent<br />(Days)</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold">Working<br />Days</th>
-                  <th className="px-3 py-3 text-center text-xs font-semibold">%</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Sl.No</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Roll No</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase">Name of the Student</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Present (Days)</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Absent (Days)</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">Working Days</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase">%</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -417,13 +397,13 @@ export function MonthlyReport() {
                         : "bg-slate-50/50 hover:bg-slate-100"
                     }`}
                   >
-                    <td className="px-3 py-2.5 text-center text-slate-500">{row.sl_no}</td>
-                    <td className="px-3 py-2.5 font-mono text-slate-700">{row.roll_number}</td>
-                    <td className="px-3 py-2.5 font-medium text-slate-900">{row.name}</td>
-                    <td className="px-3 py-2.5 text-center text-emerald-700 font-semibold">{row.present}</td>
-                    <td className="px-3 py-2.5 text-center text-rose-600 font-semibold">{row.absent}</td>
-                    <td className="px-3 py-2.5 text-center text-slate-600">{row.total}</td>
-                    <td className="px-3 py-2.5 text-center">
+                    <td className="px-4 py-3 text-center text-slate-500">{row.sl_no}</td>
+                    <td className="px-4 py-3 font-mono text-slate-700 font-medium">{row.roll_number}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
+                    <td className="px-4 py-3 text-center text-emerald-700 font-semibold">{row.present}</td>
+                    <td className="px-4 py-3 text-center text-rose-600 font-semibold">{row.absent}</td>
+                    <td className="px-4 py-3 text-center text-slate-600">{row.total}</td>
+                    <td className="px-4 py-3 text-center">
                       <Badge variant={row.percentage >= 75 ? "success" : "danger"}>
                         {row.percentage}%
                       </Badge>
@@ -434,17 +414,17 @@ export function MonthlyReport() {
               {/* Footer */}
               <tfoot>
                 <tr className="bg-slate-100 border-t-2 border-slate-300">
-                  <td colSpan={3} className="px-3 py-2.5 text-xs font-bold text-slate-700 text-right">
+                  <td colSpan={3} className="px-4 py-3 text-xs font-bold text-slate-700 text-right">
                     Class Average →
                   </td>
-                  <td className="px-3 py-2.5 text-center text-xs font-bold text-emerald-700">
+                  <td className="px-4 py-3 text-center text-xs font-bold text-emerald-700">
                     {rows.length > 0 ? Math.round(rows.reduce((a, r) => a + r.present, 0) / rows.length * 10) / 10 : 0}
                   </td>
-                  <td className="px-3 py-2.5 text-center text-xs font-bold text-rose-600">
+                  <td className="px-4 py-3 text-center text-xs font-bold text-rose-600">
                     {rows.length > 0 ? Math.round(rows.reduce((a, r) => a + r.absent, 0) / rows.length * 10) / 10 : 0}
                   </td>
-                  <td className="px-3 py-2.5 text-center text-xs font-bold text-slate-600">{workingDays}</td>
-                  <td className="px-3 py-2.5 text-center">
+                  <td className="px-4 py-3 text-center text-xs font-bold text-slate-600">{workingDays}</td>
+                  <td className="px-4 py-3 text-center">
                     <Badge variant={presentAvg >= 75 ? "success" : "danger"}>{presentAvg}%</Badge>
                   </td>
                 </tr>
