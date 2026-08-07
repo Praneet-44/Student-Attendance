@@ -13,6 +13,7 @@ import { BulkImportStudents } from "./pages/admin/BulkImportStudents";
 import { TeacherDashboard } from "./pages/teacher/TeacherDashboard";
 import { MarkAttendance } from "./pages/teacher/MarkAttendance";
 import { ExcelUpload } from "./pages/teacher/ExcelUpload";
+import { ImageUpload } from "./pages/teacher/ImageUpload";
 import { TeacherReports } from "./pages/teacher/TeacherReports";
 import { StudentDashboard } from "./pages/student/StudentDashboard";
 import { StudentAttendance } from "./pages/student/StudentAttendance";
@@ -58,6 +59,7 @@ function AppContent() {
         case "dashboard": return <TeacherDashboard onNavigate={setActivePage} />;
         case "mark": return <MarkAttendance />;
         case "upload": return <ExcelUpload />;
+        case "image-upload": return <ImageUpload />;
         case "reports": return <TeacherReports />;
         default: return <TeacherDashboard onNavigate={setActivePage} />;
       }
