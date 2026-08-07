@@ -146,6 +146,10 @@ DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
 CREATE POLICY "profiles_update_own" ON public.profiles FOR UPDATE
   TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
+CREATE POLICY "profiles_insert_own" ON public.profiles FOR INSERT
+  TO authenticated WITH CHECK (auth.uid() = id OR public.is_admin());
+
 DROP POLICY IF EXISTS "profiles_update_admin" ON public.profiles;
 CREATE POLICY "profiles_update_admin" ON public.profiles FOR UPDATE
   TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
